@@ -1,0 +1,9 @@
+{
+  "name": "GKBC Mobile",
+  "description": "Greater Kano Business Council Official Mobile Application. Connects members, businesses, and the community.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}

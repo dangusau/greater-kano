@@ -1,0 +1,125 @@
+/* index.css - Mobile Optimization Fixes */
+
+/* 1. RESET AND BASE STYLES */
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  min-height: 100vh;
+  position: relative;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden; /* Prevent horizontal scroll */
+}
+
+/* 2. REMOVE THE FIXED BODY BLOCK - This was preventing scroll */
+/* Delete this entire section:
+@media (max-width: 768px) {
+  body {
+    position: fixed;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+  
+  .mobile-container {
+    max-width: 100vw !important;
+    overflow-x: hidden !important;
+  }
+}
+*/
+
+/* 3. SAFE AREA SUPPORT FOR IPHONE */
+.safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.pb-safe {
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+}
+
+.pt-safe {
+  padding-top: calc(1rem + env(safe-area-inset-top));
+}
+
+/* 4. FIX FOR FLEX OVERFLOW */
+.min-w-0 {
+  min-width: 0;
+}
+
+/* 5. IMAGE RESPONSIVENESS */
+img, video {
+  max-width: 100%;
+  height: auto;
+}
+
+/* 6. TOUCH TARGETS FOR MOBILE */
+button, a, [role="button"] {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* 7. HIDE SCROLLBARS */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* 8. SCROLLING FIXES */
+/* Ensure main content can scroll */
+main {
+  overflow-y: auto;
+}
+
+/* 9. TRANSITION UTILITIES */
+.transition-fast {
+  transition: all 0.15s ease-in-out;
+}
+
+.transition-normal {
+  transition: all 0.3s ease-in-out;
+}
+
+.transition-slow {
+  transition: all 0.5s ease-in-out;
+}
+
+/* 10. Z-INDEX LAYERS */
+.z-sidebar {
+  z-index: 40;
+}
+
+.z-bottomnav {
+  z-index: 50;
+}
+
+.z-modal {
+  z-index: 100;
+}
+
+.z-dropdown {
+  z-index: 60;
+}
+
+/* 11. FIX FOR IOS MOMENTUM SCROLLING */
+.overflow-y-scroll {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* 12. PREVENT TEXT OVERFLOW */
+.truncate-2-lines {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
