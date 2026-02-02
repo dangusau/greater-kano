@@ -404,7 +404,7 @@ const Login: React.FC = () => {
             <div className="relative mb-3">
               <div className="w-20 h-20 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20 overflow-hidden border border-blue-100">
                 <img 
-                  src="/GKBClogo.png" 
+                  src="/gkbclogo.png" 
                   alt="GKBC Logo" 
                   className="w-full h-full object-contain p-1"
                   onError={(e) => {

@@ -210,22 +210,25 @@ const Header: React.FC<HeaderProps> = ({
                 aria-label="User profile menu"
                 aria-expanded={showProfileMenu}
               >
-                <div className="relative w-9 h-9 rounded-full flex items-center justify-center overflow-hidden ring-2 ring-white/50 bg-white">
-                  {profileData?.avatar_url ? (
-                    <img
-                      src={profileData.avatar_url}
-                      alt={displayName}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <span className="text-blue-700 font-bold text-sm">
-                      {userInitials}
-                    </span>
-                  )}
-                  {/* Verification Badge on Avatar */}
+                {/* Avatar container with relative positioning for badge */}
+                <div className="relative w-9 h-9">
+                  <div className="w-full h-full rounded-full flex items-center justify-center overflow-hidden ring-2 ring-white/50 bg-white">
+                    {profileData?.avatar_url ? (
+                      <img
+                        src={profileData.avatar_url}
+                        alt={displayName}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <span className="text-blue-700 font-bold text-sm">
+                        {userInitials}
+                      </span>
+                    )}
+                  </div>
+                  {/* Verification Badge on Avatar - Positioned outside the frame */}
                   {userStatus === 'verified' && (
-                    <div className="absolute -bottom-1 -right-1">
-                      <VerifiedBadge size={8} />
+                    <div className="absolute -bottom-0.5 -right-0.5 z-10">
+                      <VerifiedBadge size={10} className="drop-shadow-md" />
                     </div>
                   )}
                 </div>
@@ -252,22 +255,25 @@ const Header: React.FC<HeaderProps> = ({
                   <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-2xl border border-gray-200 z-50 overflow-hidden">
                     <div className="p-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-blue-50">
                       <div className="flex items-center gap-3">
-                        <div className="relative w-10 h-10 rounded-full flex items-center justify-center overflow-hidden bg-white border border-gray-300">
-                          {profileData?.avatar_url ? (
-                            <img
-                              src={profileData.avatar_url}
-                              alt={displayName}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <span className="text-blue-700 font-bold text-sm">
-                              {userInitials}
-                            </span>
-                          )}
-                          {/* Verification Badge in Profile Menu */}
+                        {/* Avatar container with relative positioning for badge */}
+                        <div className="relative w-10 h-10">
+                          <div className="w-full h-full rounded-full flex items-center justify-center overflow-hidden bg-white border border-gray-300">
+                            {profileData?.avatar_url ? (
+                              <img
+                                src={profileData.avatar_url}
+                                alt={displayName}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <span className="text-blue-700 font-bold text-sm">
+                                {userInitials}
+                              </span>
+                            )}
+                          </div>
+                          {/* Verification Badge on Avatar - Positioned outside the frame */}
                           {userStatus === 'verified' && (
-                            <div className="absolute -bottom-1 -right-1">
-                              <VerifiedBadge size={1} />
+                            <div className="absolute -bottom-0.5 -right-0.5 z-10">
+                              <VerifiedBadge size={10} className="drop-shadow-md" />
                             </div>
                           )}
                         </div>

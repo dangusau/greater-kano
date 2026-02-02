@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { X, DollarSign, MapPin, Briefcase, Mail, Phone, FileText } from 'lucide-react';
+import toast from 'react-hot-toast'; // ADD THIS IMPORT
 
 interface CreateJobModalProps {
   isOpen: boolean;
@@ -22,9 +23,13 @@ const CreateJobModal: React.FC<CreateJobModalProps> = ({ isOpen, onClose, onSubm
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!title.trim()) return;
+    if (!title.trim()) {
+      toast.error('Please enter a job title');
+      return;
+    }
     
     setLoading(true);
+    const toastId = toast.loading('Posting job...'); // ADD LOADING TOAST
 
     try {
       await onSubmit({
@@ -39,10 +44,15 @@ const CreateJobModal: React.FC<CreateJobModalProps> = ({ isOpen, onClose, onSubm
         }
       });
 
+      toast.dismiss(toastId);
+      toast.success('Job posted successfully!'); // ADD SUCCESS TOAST
+      
       resetForm();
       onClose();
-    } catch {
-      // Error handled in parent
+    } catch (error) {
+      toast.dismiss(toastId);
+      toast.error('Failed to post job. Please try again.'); // ADD ERROR TOAST
+      console.error('Job posting error:', error);
     } finally {
       setLoading(false);
     }
@@ -72,16 +82,15 @@ const CreateJobModal: React.FC<CreateJobModalProps> = ({ isOpen, onClose, onSubm
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/50 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 backdrop-blur-sm pt-12 md:pt-20"
       onClick={handleOverlayClick}
       role="dialog"
       aria-modal="true"
       aria-labelledby="create-job-title"
     >
-      <div className="w-full max-w-md max-h-[90vh] overflow-hidden bg-white rounded-t-2xl md:rounded-2xl 
-                    border border-blue-200 shadow-2xl animate-slide-up">
+      <div className="w-full max-w-md bg-white rounded-xl border border-blue-200 shadow-2xl animate-fadeIn max-h-[85vh] flex flex-col mx-3">
         {/* Header */}
-        <div className="sticky top-0 z-10 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-200 p-3">
+        <div className="sticky top-0 z-10 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-200 p-3 flex-shrink-0">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-lg 
@@ -104,9 +113,9 @@ const CreateJobModal: React.FC<CreateJobModalProps> = ({ isOpen, onClose, onSubm
           </div>
         </div>
 
-        {/* Form Content */}
-        <div className="overflow-y-auto" style={{ maxHeight: 'calc(90vh - 100px)' }}>
-          <form onSubmit={handleSubmit} className="p-3 space-y-3">
+        {/* Scrollable Form Content */}
+        <div className="flex-1 overflow-y-auto p-3" style={{ maxHeight: 'calc(85vh - 140px)' }}>
+          <form onSubmit={handleSubmit} className="space-y-3">
             {/* Job Title */}
             <div className="space-y-1">
               <label htmlFor="job-title" className="block text-xs font-medium text-gray-700">
@@ -288,33 +297,33 @@ const CreateJobModal: React.FC<CreateJobModalProps> = ({ isOpen, onClose, onSubm
                 </div>
               </div>
             </div>
-
-            {/* Submit Button */}
-            <button
-              type="submit"
-              disabled={loading || !title.trim()}
-              className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white 
-                       font-bold py-2 rounded-lg shadow-md hover:shadow-lg 
-                       hover:from-blue-700 hover:to-indigo-700 
-                       disabled:opacity-50 disabled:cursor-not-allowed 
-                       active:scale-[0.99] transition-all duration-200 
-                       focus:outline-none focus:ring-2 focus:ring-blue-500/50 mt-3 text-xs min-h-[36px]"
-              aria-label={loading ? 'Posting job...' : 'Post job listing'}
-            >
-              {loading ? (
-                <div className="flex items-center justify-center gap-2">
-                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  <span>Posting Job...</span>
-                </div>
-              ) : (
-                'Post Job Listing'
-              )}
-            </button>
           </form>
         </div>
 
-        {/* Bottom Safe Area Spacer */}
-        <div className="h-2 md:h-0" />
+        {/* Fixed Footer with Submit Button */}
+        <div className="p-3 border-t border-blue-200 bg-gray-50 flex-shrink-0">
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={loading || !title.trim()}
+            className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white 
+                     font-bold py-2 rounded-lg shadow-md hover:shadow-lg 
+                     hover:from-blue-700 hover:to-indigo-700 
+                     disabled:opacity-50 disabled:cursor-not-allowed 
+                     active:scale-[0.99] transition-all duration-200 
+                     focus:outline-none focus:ring-2 focus:ring-blue-500/50 text-xs min-h-[36px]"
+            aria-label={loading ? 'Posting job...' : 'Post job listing'}
+          >
+            {loading ? (
+              <div className="flex items-center justify-center gap-2">
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <span>Posting Job...</span>
+              </div>
+            ) : (
+              'Post Job Listing'
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );

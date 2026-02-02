@@ -1,7 +1,6 @@
 // pages/admin/AdminBusinesses.tsx
 import React, { useEffect, useState } from 'react'
 import { adminBusinessesService } from '../../services/adminBusinesses'
-import { getCurrentUser } from '../../services/supabase'
 import { 
   CheckCircle, 
   XCircle, 
@@ -12,9 +11,7 @@ import {
   User, 
   AlertCircle,
   Loader2,
-  Eye,
   Mail,
-  Phone,
   Globe
 } from 'lucide-react'
 
@@ -35,6 +32,9 @@ type Business = {
   verification_status: 'pending' | 'approved' | 'rejected'
   created_at: string
   rejection_reason?: string | null
+  owner_first_name: string | null
+  owner_last_name: string | null
+  owner_email: string | null
 }
 
 const statusConfig: Record<string, { color: string; icon: React.ReactNode; bgColor: string }> = {
@@ -59,17 +59,6 @@ const AdminBusinesses: React.FC = () => {
   const [businesses, setBusinesses] = useState<Business[]>([])
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
-  const [selectedBusiness, setSelectedBusiness] = useState<Business | null>(null)
-
-  const [adminId, setAdminId] = useState<string>('')
-
-  useEffect(() => {
-    const fetchAdmin = async () => {
-      const user = await getCurrentUser()
-      if (user?.id) setAdminId(user.id)
-    }
-    fetchAdmin()
-  }, [])
 
   const fetchBusinesses = async () => {
     setLoading(true)
@@ -84,27 +73,18 @@ const AdminBusinesses: React.FC = () => {
   }, [])
 
   const handleApprove = async (businessId: string) => {
-    if (!adminId) return
     setActionLoading(businessId)
-    const { data, error } = await adminBusinessesService.approveBusiness(
-      businessId,
-      adminId
-    )
+    const { error } = await adminBusinessesService.approveBusiness(businessId)
     if (error) console.error('Error approving business:', error)
     await fetchBusinesses()
     setActionLoading(null)
   }
 
   const handleReject = async (businessId: string) => {
-    if (!adminId) return
     const reason = prompt('Enter rejection reason:')
     if (!reason) return
     setActionLoading(businessId)
-    const { data, error } = await adminBusinessesService.rejectBusiness(
-      businessId,
-      adminId,
-      reason
-    )
+    const { error } = await adminBusinessesService.rejectBusiness(businessId, reason)
     if (error) console.error('Error rejecting business:', error)
     await fetchBusinesses()
     setActionLoading(null)
@@ -114,7 +94,7 @@ const AdminBusinesses: React.FC = () => {
     const confirmDelete = confirm('Are you sure you want to delete this business?')
     if (!confirmDelete) return
     setActionLoading(businessId)
-    const { data, error } = await adminBusinessesService.deleteBusiness(businessId)
+    const { error } = await adminBusinessesService.deleteBusiness(businessId)
     if (error) console.error('Error deleting business:', error)
     await fetchBusinesses()
     setActionLoading(null)
@@ -128,6 +108,13 @@ const AdminBusinesses: React.FC = () => {
         <span className="text-sm font-medium capitalize">{status}</span>
       </div>
     )
+  }
+
+  const getOwnerName = (business: Business) => {
+    if (business.owner_first_name || business.owner_last_name) {
+      return `${business.owner_first_name || ''} ${business.owner_last_name || ''}`.trim()
+    }
+    return business.owner_email || 'Unknown'
   }
 
   return (
@@ -144,7 +131,7 @@ const AdminBusinesses: React.FC = () => {
           <p className="text-gray-600">Review and manage business verification requests</p>
         </div>
 
-        {/* Stats Cards */}
+        {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
           <div className="bg-white rounded-xl shadow-sm border p-5">
             <div className="flex items-center justify-between">
@@ -157,7 +144,7 @@ const AdminBusinesses: React.FC = () => {
               </div>
             </div>
           </div>
-          
+
           <div className="bg-white rounded-xl shadow-sm border p-5">
             <div className="flex items-center justify-between">
               <div>
@@ -171,7 +158,7 @@ const AdminBusinesses: React.FC = () => {
               </div>
             </div>
           </div>
-          
+
           <div className="bg-white rounded-xl shadow-sm border p-5">
             <div className="flex items-center justify-between">
               <div>
@@ -187,19 +174,16 @@ const AdminBusinesses: React.FC = () => {
           </div>
         </div>
 
-        {/* Main Content */}
+        {/* Business Table */}
         <div className="bg-white rounded-2xl shadow-lg border overflow-hidden">
-          {/* Table Header */}
-          <div className="px-6 py-4 border-b bg-gradient-to-r from-gray-50 to-white">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-800">Business List</h3>
-              <button
-                onClick={fetchBusinesses}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
-              >
-                Refresh List
-              </button>
-            </div>
+          <div className="px-6 py-4 border-b bg-gradient-to-r from-gray-50 to-white flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-gray-800">Business List</h3>
+            <button
+              onClick={fetchBusinesses}
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+            >
+              Refresh List
+            </button>
           </div>
 
           {loading ? (
@@ -221,134 +205,98 @@ const AdminBusinesses: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {businesses.map((b) => (
-                    <tr 
-                      key={b.id} 
-                      className="hover:bg-gray-50 transition-colors group"
-                    >
-                      <td className="p-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-gradient-to-br from-indigo-100 to-purple-100 rounded-lg flex items-center justify-center">
-                            {b.logo_url ? (
-                              <img src={b.logo_url} alt={b.name} className="w-8 h-8 rounded" />
-                            ) : (
-                              <Building2 className="w-5 h-5 text-indigo-600" />
-                            )}
-                          </div>
-                          <div>
-                            <p className="font-medium text-gray-900">{b.name}</p>
-                            <div className="flex items-center gap-2 mt-1">
-                              {b.email && (
-                                <a 
-                                  href={`mailto:${b.email}`}
-                                  className="text-xs text-gray-500 hover:text-indigo-600 transition-colors"
-                                >
-                                  <Mail className="w-3 h-3 inline mr-1" />
-                                  Email
-                                </a>
-                              )}
-                              {b.website && (
-                                <a 
-                                  href={b.website}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-xs text-gray-500 hover:text-indigo-600 transition-colors"
-                                >
-                                  <Globe className="w-3 h-3 inline mr-1" />
-                                  Website
-                                </a>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="p-4">
-                        <div className="flex items-center gap-2">
-                          <User className="w-4 h-4 text-gray-400" />
-                          <span className="text-sm text-gray-600 font-mono">{b.owner_id.substring(0, 8)}...</span>
-                        </div>
-                      </td>
-                      <td className="p-4">
-                        <div className="space-y-1">
-                          <span className="inline-block px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-medium">
-                            {b.business_type}
-                          </span>
-                          <p className="text-sm text-gray-600">{b.category}</p>
-                        </div>
-                      </td>
-                      <td className="p-4">
-                        <div className="flex items-center gap-2">
-                          <MapPin className="w-4 h-4 text-gray-400" />
-                          <span className="text-sm text-gray-600">{b.location_axis}</span>
-                        </div>
-                      </td>
-                      <td className="p-4">
-                        {getStatusBadge(b.verification_status)}
-                      </td>
-                      <td className="p-4">
-                        <div className="flex items-center gap-2">
-                          {b.verification_status === 'pending' && (
-                            <>
-                              <button
-                                disabled={!!actionLoading}
-                                onClick={() => handleApprove(b.id)}
-                                className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:shadow-md"
-                              >
-                                {actionLoading === b.id ? (
-                                  <Loader2 className="w-4 h-4 animate-spin" />
-                                ) : (
-                                  <CheckCircle className="w-4 h-4" />
-                                )}
-                                Approve
-                              </button>
-                              <button
-                                disabled={!!actionLoading}
-                                onClick={() => handleReject(b.id)}
-                                className="flex items-center gap-2 px-4 py-2 bg-rose-500 text-white rounded-lg hover:bg-rose-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:shadow-md"
-                              >
-                                {actionLoading === b.id ? (
-                                  <Loader2 className="w-4 h-4 animate-spin" />
-                                ) : (
-                                  <XCircle className="w-4 h-4" />
-                                )}
-                                Reject
-                              </button>
-                            </>
-                          )}
-                          <button
-                            disabled={!!actionLoading}
-                            onClick={() => handleDelete(b.id)}
-                            className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed transition-all hover:shadow-sm"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                            Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
                   {businesses.length === 0 && (
                     <tr>
                       <td colSpan={6} className="p-12 text-center">
                         <div className="flex flex-col items-center justify-center">
                           <AlertCircle className="w-12 h-12 text-gray-300 mb-4" />
                           <p className="text-gray-500 text-lg">No businesses found</p>
-                          <p className="text-gray-400 mt-2">When businesses register, they will appear here</p>
                         </div>
                       </td>
                     </tr>
                   )}
+                  {businesses.map((b) => (
+                    <tr key={b.id} className="hover:bg-gray-50 transition-colors group">
+                      <td className="p-4 flex items-center gap-3">
+                        <div className="w-10 h-10 bg-gradient-to-br from-indigo-100 to-purple-100 rounded-lg flex items-center justify-center">
+                          {b.logo_url ? (
+                            <img src={b.logo_url} alt={b.name} className="w-8 h-8 rounded" />
+                          ) : (
+                            <Building2 className="w-5 h-5 text-indigo-600" />
+                          )}
+                        </div>
+                        <div>
+                          <p className="font-medium text-gray-900">{b.name}</p>
+                          {b.email && (
+                            <a href={`mailto:${b.email}`} className="text-xs text-gray-500 hover:text-indigo-600 flex items-center gap-1">
+                              <Mail className="w-3 h-3" /> Email
+                            </a>
+                          )}
+                          {b.website && (
+                            <a href={b.website} target="_blank" rel="noopener noreferrer" className="text-xs text-gray-500 hover:text-indigo-600 flex items-center gap-1">
+                              <Globe className="w-3 h-3" /> Website
+                            </a>
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-4">
+                        <div className="space-y-1">
+                          <span className="text-sm font-medium text-gray-800">{getOwnerName(b)}</span>
+                          {b.owner_email && (
+                            <a href={`mailto:${b.owner_email}`} className="text-xs text-gray-600 hover:text-indigo-600">{b.owner_email}</a>
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-4">
+                        <div className="space-y-1">
+                          <span className="inline-block px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-medium">{b.business_type}</span>
+                          <p className="text-sm text-gray-600">{b.category}</p>
+                        </div>
+                      </td>
+                      <td className="p-4 flex items-center gap-2">
+                        <MapPin className="w-4 h-4 text-gray-400" />
+                        <span className="text-sm text-gray-600">{b.location_axis}</span>
+                      </td>
+                      <td className="p-4">{getStatusBadge(b.verification_status)}</td>
+                      <td className="p-4 flex gap-2">
+                        {b.verification_status === 'pending' && (
+                          <>
+                            <button
+                              disabled={!!actionLoading}
+                              onClick={() => handleApprove(b.id)}
+                              className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {actionLoading === b.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+                              Approve
+                            </button>
+                            <button
+                              disabled={!!actionLoading}
+                              onClick={() => handleReject(b.id)}
+                              className="flex items-center gap-2 px-4 py-2 bg-rose-500 text-white rounded-lg hover:bg-rose-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {actionLoading === b.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
+                              Reject
+                            </button>
+                          </>
+                        )}
+                        <button
+                          disabled={!!actionLoading}
+                          onClick={() => handleDelete(b.id)}
+                          className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <Trash2 className="w-4 h-4" /> Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
           )}
         </div>
 
-        {/* Footer Note */}
-        <div className="mt-6 text-center">
-          <p className="text-sm text-gray-500">
-            Need help? Contact support for assistance with business verification.
-          </p>
+        <div className="mt-6 text-center text-sm text-gray-500">
+          Need help? Contact support for assistance with business verification.
         </div>
       </div>
     </div>

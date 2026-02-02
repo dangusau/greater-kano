@@ -162,19 +162,25 @@ export const useExplore = () => {
     if (!event) return;
     
     const oldRSVPStatus = event.user_rsvp_status;
-    const oldRSVPCount = event.rsvp_count;
+    const oldRSVPCount = event.rsvp_count || 0;
     
     setEvents(prev => prev.map(e => {
       if (e.id === eventId) {
-        return oldRSVPStatus ? {
-          ...e,
-          user_rsvp_status: null,
-          rsvp_count: e.rsvp_count - 1
-        } : {
-          ...e,
-          user_rsvp_status: rsvpStatus,
-          rsvp_count: e.rsvp_count + 1
-        };
+        const currentCount = e.rsvp_count || 0;
+        
+        if (oldRSVPStatus) {
+          return {
+            ...e,
+            user_rsvp_status: null,
+            rsvp_count: Math.max(0, currentCount - 1)
+          };
+        } else {
+          return {
+            ...e,
+            user_rsvp_status: rsvpStatus,
+            rsvp_count: currentCount + 1
+          };
+        }
       }
       return e;
     }));
@@ -185,7 +191,7 @@ export const useExplore = () => {
         if (e.id === eventId) {
           return {
             ...e,
-            rsvp_count: result.rsvp_count,
+            rsvp_count: result.rsvp_count || oldRSVPCount,
             user_rsvp_status: result.rsvp_status
           };
         }

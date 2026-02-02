@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Search, Filter, Plus, Briefcase, Calendar, AlertCircle, X } from 'lucide-react';
+import { Toaster } from 'react-hot-toast';
 import { useExplore } from '../hooks/useExplore';
 import JobCard from '../components/explore/JobCard';
 import EventCard from '../components/explore/EventCard';
@@ -69,6 +70,7 @@ const Explore: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white safe-area">
+      <Toaster position="top-right" /> 
       {/* Header */}
       <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-3 border-b border-blue-800">
         <div className="max-w-7xl mx-auto">

@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { X, Calendar, MapPin, Clock, CalendarDays, FileText } from 'lucide-react';
+import toast from 'react-hot-toast'; 
 
 interface CreateEventModalProps {
   isOpen: boolean;
@@ -24,9 +25,13 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!title.trim() || !eventDate || !eventTime) return;
+    if (!title.trim() || !eventDate || !eventTime) {
+      toast.error('Please fill in all required fields');
+      return;
+    }
 
     setLoading(true);
+    const toastId = toast.loading('Creating event...'); // ADD LOADING TOAST
 
     try {
       const fullDateTime = `${eventDate}T${eventTime}:00`;
@@ -38,10 +43,15 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
         location: location.trim(),
       });
 
+      toast.dismiss(toastId);
+      toast.success('Event created successfully!'); // ADD SUCCESS TOAST
+      
       resetForm();
       onClose();
-    } catch {
-      // Error handled in parent
+    } catch (error) {
+      toast.dismiss(toastId);
+      toast.error('Failed to create event. Please try again.'); // ADD ERROR TOAST
+      console.error('Event creation error:', error);
     } finally {
       setLoading(false);
     }
@@ -65,16 +75,15 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
 
   return (
     <div 
-      className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/50 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 backdrop-blur-sm pt-12 md:pt-20"
       onClick={handleOverlayClick}
       role="dialog"
       aria-modal="true"
       aria-labelledby="create-event-title"
     >
-      <div className="w-full max-w-md max-h-[90vh] overflow-hidden bg-white rounded-t-2xl md:rounded-2xl 
-                    border border-blue-200 shadow-2xl animate-slide-up">
+      <div className="w-full max-w-md bg-white rounded-xl border border-blue-200 shadow-2xl animate-fadeIn max-h-[85vh] flex flex-col mx-3">
         {/* Header */}
-        <div className="sticky top-0 z-10 bg-gradient-to-r from-purple-50 to-pink-50 border-b border-purple-200 p-3">
+        <div className="sticky top-0 z-10 bg-gradient-to-r from-purple-50 to-pink-50 border-b border-purple-200 p-3 flex-shrink-0">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg 
@@ -97,9 +106,9 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
           </div>
         </div>
 
-        {/* Form Content */}
-        <div className="overflow-y-auto" style={{ maxHeight: 'calc(90vh - 100px)' }}>
-          <form onSubmit={handleSubmit} className="p-3 space-y-3">
+        {/* Scrollable Form Content */}
+        <div className="flex-1 overflow-y-auto p-3" style={{ maxHeight: 'calc(85vh - 140px)' }}>
+          <form onSubmit={handleSubmit} className="space-y-3">
             {/* Event Title */}
             <div className="space-y-1">
               <label htmlFor="event-title" className="block text-xs font-medium text-gray-700">
@@ -113,7 +122,7 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
                   type="text"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g., Networking Mixer, Business Conference"
+                  placeholder="e.g., Networking, Business Conference"
                   className="w-full pl-9 pr-3 py-2 bg-white border border-blue-200 rounded-lg text-xs 
                            focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all
                            min-h-[36px]"
@@ -207,7 +216,7 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
                   type="text"
                   value={location}
                   onChange={(e) => setLocation(e.target.value)}
-                  placeholder="e.g., Lagos Business Hub, Virtual Meeting"
+                  placeholder="e.g., Kano Business Hub, Virtual Meeting"
                   className="w-full pl-9 pr-3 py-2 bg-white border border-blue-200 rounded-lg text-xs 
                            focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all
                            min-h-[36px]"
@@ -215,33 +224,33 @@ const CreateEventModal: React.FC<CreateEventModalProps> = ({ isOpen, onClose, on
                 />
               </div>
             </div>
-
-            {/* Submit Button */}
-            <button
-              type="submit"
-              disabled={loading || !title.trim() || !eventDate || !eventTime}
-              className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white 
-                       font-bold py-2 rounded-lg shadow-md hover:shadow-lg 
-                       hover:from-purple-700 hover:to-pink-700 
-                       disabled:opacity-50 disabled:cursor-not-allowed 
-                       active:scale-[0.99] transition-all duration-200 
-                       focus:outline-none focus:ring-2 focus:ring-purple-500/50 text-xs min-h-[36px]"
-              aria-label={loading ? 'Creating event...' : 'Create event'}
-            >
-              {loading ? (
-                <div className="flex items-center justify-center gap-1">
-                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  <span>Creating Event...</span>
-                </div>
-              ) : (
-                'Create Event'
-              )}
-            </button>
           </form>
         </div>
 
-        {/* Bottom Safe Area Spacer */}
-        <div className="h-2 md:h-0" />
+        {/* Fixed Footer with Submit Button */}
+        <div className="p-3 border-t border-blue-200 bg-gray-50 flex-shrink-0">
+          <button
+            type="submit"
+            onClick={handleSubmit}
+            disabled={loading || !title.trim() || !eventDate || !eventTime}
+            className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white 
+                     font-bold py-2 rounded-lg shadow-md hover:shadow-lg 
+                     hover:from-purple-700 hover:to-pink-700 
+                     disabled:opacity-50 disabled:cursor-not-allowed 
+                     active:scale-[0.99] transition-all duration-200 
+                     focus:outline-none focus:ring-2 focus:ring-purple-500/50 text-xs min-h-[36px]"
+            aria-label={loading ? 'Creating event...' : 'Create event'}
+          >
+            {loading ? (
+              <div className="flex items-center justify-center gap-1">
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <span>Creating Event...</span>
+              </div>
+            ) : (
+              'Create Event'
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
-  Edit3, MessageCircle, UserPlus, UserMinus, Check, 
+  Edit3, UserPlus, UserMinus, Check, 
   MoreVertical, Camera, Building, Briefcase, Calendar,
   ChevronLeft, Upload, X, Globe, Phone, Mail, MapPin,
   Link, Share2, Settings, LogOut, Trash2, Eye, EyeOff,
@@ -534,21 +534,13 @@ const loadTabData = async (tab: string, profileId: string) => {
 
     if (isConnected) {
       return (
-        <div className="w-full max-w-xs mx-auto flex gap-3">
-          <button 
-            onClick={() => navigate(`/messages/new?userId=${profileData?.profile.id}`)}
-            className="flex-1 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg hover:from-blue-700 hover:to-blue-800 active:scale-[0.98] transition-all min-h-[52px] border border-blue-800"
-          >
-            <MessageCircle size={20} />
-            Message
-          </button>
-          <button
-            onClick={handleDisconnect}
-            className="w-14 py-3 bg-gradient-to-r from-red-50 to-red-100 text-red-600 rounded-xl font-bold flex items-center justify-center gap-2 border border-red-300 hover:from-red-100 hover:to-red-200 active:scale-[0.98] transition-all min-h-[52px]"
-          >
-            <UserMinus size={20} />
-          </button>
-        </div>
+        <button
+          onClick={handleDisconnect}
+          className="w-full max-w-xs mx-auto py-4 bg-gradient-to-r from-red-500 to-rose-600 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg hover:from-red-600 hover:to-rose-700 active:scale-[0.98] transition-all min-h-[52px] border border-red-800"
+        >
+          <UserMinus size={20} />
+          Disconnect
+        </button>
       );
     }
 
@@ -1045,10 +1037,10 @@ const loadTabData = async (tab: string, profileId: string) => {
           )}
         </div>
 
-        {/* Profile Picture */}
+        {/* Profile Picture with Verification Badge */}
         <div className="absolute -bottom-16 left-4 sm:left-1/2 sm:transform sm:-translate-x-1/2">
           <div className="relative">
-            <div className="w-32 h-32 bg-gradient-to-br from-blue-100 to-purple-100 rounded-full border-4 border-white shadow-xl overflow-hidden border border-blue-300">
+            <div className="w-32 h-32 bg-gradient-to-br from-blue-100 to-purple-100 rounded-full border-4 border-white shadow-xl overflow-hidden border border-blue-300 relative">
               {profile.avatar_url ? (
                 <div className="relative w-full h-full">
                   <img
@@ -1057,15 +1049,16 @@ const loadTabData = async (tab: string, profileId: string) => {
                     className="w-full h-full object-cover"
                     loading="lazy"
                   />
-                  {isVerifiedUser && (
-                    <div className="absolute -top-1 -right-1">
-                      <VerifiedBadge size={15} />
-                    </div>
-                  )}
                 </div>
               ) : (
                 <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-400 to-purple-500 text-white text-4xl font-bold">
                   {profile.first_name?.charAt(0)}
+                </div>
+              )}
+              {/* Verification Badge on Avatar - Bottom Right */}
+              {isVerifiedUser && (
+                <div className="absolute -bottom-1 -right-1 z-10">
+                  <VerifiedBadge size={15} />
                 </div>
               )}
             </div>
@@ -1271,6 +1264,7 @@ const loadTabData = async (tab: string, profileId: string) => {
               posts={posts} 
               isOwner={isOwner} 
               onDelete={(post) => handleDeleteItem(post, 'post')}
+              isVerifiedUser={isVerifiedUser}
             />
           )}
           {activeTab === 'marketplace' && (
@@ -1533,7 +1527,7 @@ const ProfileSkeleton = () => (
 /**
  * Mobile-Optimized Post Grid Component
  */
-const PostGridMobile = ({ posts, isOwner, onDelete }: any) => {
+const PostGridMobile = ({ posts, isOwner, onDelete, isVerifiedUser }: any) => {
   if (posts.length === 0) {
     return (
       <div className="text-center py-12">
@@ -1553,10 +1547,17 @@ const PostGridMobile = ({ posts, isOwner, onDelete }: any) => {
           <div className="p-4">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-100 to-purple-100 overflow-hidden flex items-center justify-center border border-blue-200">
+                {/* Post Author Avatar with Verification Badge */}
+                <div className="relative w-10 h-10 rounded-full bg-gradient-to-br from-blue-100 to-purple-100 overflow-hidden flex items-center justify-center border border-blue-200">
                   {post.author_avatar_url ? (
                     <div className="relative w-full h-full">
                       <img src={post.author_avatar_url} alt={post.author_name} className="w-full h-full object-cover" />
+                      {/* Verification Badge on Post Author Avatar */}
+                      {isVerifiedUser && (
+                        <div className="absolute -bottom-1 -right-1 z-10">
+                          <VerifiedBadge size={8} />
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-400 to-purple-500 text-white text-sm font-bold">
@@ -1567,6 +1568,8 @@ const PostGridMobile = ({ posts, isOwner, onDelete }: any) => {
                 <div>
                   <div className="flex items-center gap-1">
                     <h4 className="font-bold text-gray-900">{post.author_name}</h4>
+                    {/* Verification Badge next to Post Author Name */}
+                    {isVerifiedUser && <VerifiedBadge size={8} />}
                   </div>
                   <p className="text-xs text-gray-500">{formatTimeAgo(post.created_at)}</p>
                 </div>
