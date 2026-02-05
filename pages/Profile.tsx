@@ -1,488 +1,553 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+// components/profile/Profile.tsx
+import React, { useRef } from 'react';
 import { 
   Edit3, UserPlus, UserMinus, Check, 
   MoreVertical, Camera, Building, Briefcase, Calendar,
   ChevronLeft, Upload, X, Globe, Phone, Mail, MapPin,
-  Link, Share2, Settings, LogOut, Trash2, Eye, EyeOff,
-  AlertCircle, Info, CheckCircle, XCircle, Clock, Heart,
-  ThumbsUp, Users, ShoppingBag, Bell, ExternalLink
+  Link, Share2, Settings, LogOut, Trash2, AlertCircle, 
+  Info, CheckCircle, XCircle, Clock, Heart, Bell,
+  MessageCircle, Share, ExternalLink
 } from 'lucide-react';
-import { profileService } from '../services/supabase/profile';
-import { supabase } from '../services/supabase';
-import { formatTimeAgo } from '../utils/formatters';
+import { useProfile } from '../hooks/useProfile';
+import { formatTimeAgo } from '../../utils/formatters';
 import EditModal from '../components/profile/EditModal';
 import DeleteModal from '../components/profile/DeleteModal';
 import VerifiedBadge from '../components/VerifiedBadge';
 
-/**
- * Interface for Profile data structure
- */
-interface ProfileData {
-  profile: any;
-  stats: any;
-  relationship: any;
-}
+// Loading Skeleton Component (included in same file)
+const ProfileSkeleton = () => (
+  <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white safe-area">
+    <div className="h-48 bg-gradient-to-r from-gray-200 to-gray-300 animate-pulse border-b border-gray-300"></div>
+    <div className="px-4 -mt-16">
+      <div className="w-32 h-32 bg-gray-300 rounded-full mx-auto animate-pulse border-4 border-white border border-gray-400"></div>
+    </div>
+    <div className="pt-20 px-4 text-center space-y-4">
+      <div className="h-8 bg-gray-300 rounded w-1/2 mx-auto animate-pulse border border-gray-400"></div>
+      <div className="h-4 bg-gray-200 rounded w-3/4 mx-auto animate-pulse border border-gray-300"></div>
+      <div className="h-4 bg-gray-200 rounded w-1/3 mx-auto animate-pulse border border-gray-300"></div>
+    </div>
+    <div className="px-4 mt-8">
+      <div className="grid grid-cols-3 gap-3">
+        {[...Array(6)].map((_, i) => (
+          <div key={i} className="h-20 bg-gray-200 rounded-xl animate-pulse border border-gray-300"></div>
+        ))}
+      </div>
+    </div>
+  </div>
+);
 
-/**
- * Profile Component
- */
+// Reusable Confirmation Modal Component (included in same file)
+const ConfirmationModal: React.FC<{
+  title: string;
+  message: string;
+  confirmText: string;
+  confirmColor: string;
+  icon: React.ReactNode;
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}> = ({ title, message, confirmText, confirmColor, icon, isOpen, onClose, onConfirm }) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 safe-area">
+      <div 
+        className="fixed inset-0 bg-black/70 backdrop-blur-sm animate-fadeIn"
+        onClick={onClose}
+      />
+      
+      <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[101] w-full max-w-sm px-4">
+        <div className="relative bg-white rounded-2xl shadow-2xl border border-gray-200 p-6 animate-scaleIn mx-auto">
+          <div className="flex items-center justify-center mb-6">
+            <div className="w-16 h-16 bg-gradient-to-br from-gray-100 to-gray-50 rounded-full flex items-center justify-center border border-gray-200">
+              {icon}
+            </div>
+          </div>
+          <h3 className="text-xl font-bold text-gray-900 text-center mb-3">{title}</h3>
+          <p className="text-gray-600 text-center mb-6 text-sm leading-relaxed">
+            {message}
+          </p>
+          <div className="flex flex-col gap-3">
+            <button
+              onClick={onConfirm}
+              className={`py-3 bg-gradient-to-r ${confirmColor} text-white rounded-xl font-bold hover:opacity-90 active:scale-[0.98] transition-all min-h-[44px]`}
+            >
+              {confirmText}
+            </button>
+            <button
+              onClick={onClose}
+              className="py-3 bg-gray-100 text-gray-700 rounded-xl font-bold hover:bg-gray-200 active:scale-[0.98] transition-all min-h-[44px] border border-gray-300"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Mobile-Optimized Post Grid Component (included in same file)
+const PostGridMobile = ({ posts, isOwner, onDelete, isVerifiedUser, onToggleLike, onShare }: any) => {
+  if (posts.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <div className="w-16 h-16 bg-gradient-to-br from-gray-100 to-gray-50 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-gray-200">
+          <div className="text-2xl">📝</div>
+        </div>
+        <h3 className="text-lg font-bold text-gray-900 mb-2">No Posts</h3>
+        <p className="text-gray-600 text-sm">No posts to display.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {posts.map((post: any, index: number) => (
+        <div key={post.id} className="bg-white rounded-xl border-2 border-gray-200 overflow-hidden hover:border-blue-300 transition-colors">
+          <div className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-3">
+                <div className="relative w-10 h-10 rounded-full bg-gradient-to-br from-blue-100 to-purple-100 overflow-hidden flex items-center justify-center border border-blue-200">
+                  {post.author_avatar_url ? (
+                    <div className="relative w-full h-full">
+                      <img src={post.author_avatar_url} alt={post.author_name} className="w-full h-full object-cover" />
+                      {isVerifiedUser && (
+                        <div className="absolute -bottom-1 -right-1 z-10">
+                          <VerifiedBadge size={8} />
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-400 to-purple-500 text-white text-sm font-bold">
+                      {post.author_name?.charAt(0)}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <div className="flex items-center gap-1">
+                    <h4 className="font-bold text-gray-900">{post.author_name}</h4>
+                    {isVerifiedUser && <VerifiedBadge size={8} />}
+                  </div>
+                  <p className="text-xs text-gray-500">{formatTimeAgo(post.created_at)}</p>
+                </div>
+              </div>
+              {isOwner && (
+                <button 
+                  onClick={() => onDelete(post)}
+                  className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors min-h-[32px] min-w-[32px] border border-gray-200"
+                  aria-label="Delete post"
+                >
+                  <Trash2 size={16} />
+                </button>
+              )}
+            </div>
+
+            {post.content && (
+              <div className="mb-3">
+                <p className="text-gray-800 whitespace-pre-line leading-relaxed">{post.content}</p>
+              </div>
+            )}
+
+            {post.media_urls && post.media_urls.length > 0 && (
+              <div className="mb-4 rounded-lg overflow-hidden border border-gray-300">
+                <div className="relative">
+                  <img
+                    src={post.media_urls[0]}
+                    alt="Post media"
+                    className="w-full h-auto max-h-[400px] object-contain"
+                    style={{ maxWidth: '100%', height: 'auto' }}
+                    loading="lazy"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+              <div className="flex items-center gap-4">
+                <button 
+                  onClick={() => onToggleLike(post.id, index)}
+                  className={`flex items-center gap-1 transition-colors ${
+                    post.has_liked 
+                      ? 'text-red-500 hover:text-red-600' 
+                      : 'text-gray-500 hover:text-red-500'
+                  }`}
+                >
+                  <Heart 
+                    size={18} 
+                    className={post.has_liked ? 'fill-current' : ''}
+                  />
+                  <span className="text-sm font-medium">{post.likes_count || 0}</span>
+                </button>
+                
+                <button className="flex items-center gap-1 text-gray-500 hover:text-blue-500 transition-colors">
+                  <MessageCircle size={18} />
+                  <span className="text-sm font-medium">{post.comments_count || 0}</span>
+                </button>
+              </div>
+              
+              <button 
+                onClick={() => onShare(post.id, index)}
+                className="flex items-center gap-1 text-gray-500 hover:text-green-500 transition-colors"
+              >
+                <Share size={18} />
+                <span className="text-sm font-medium">{post.shares_count || 0}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// Mobile-Optimized Listing Grid Component (included in same file)
+const ListingGridMobile = ({ listings, isOwner, onEdit, onDelete }: any) => {
+  if (listings.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <div className="w-16 h-16 bg-gradient-to-br from-gray-100 to-gray-50 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-gray-200">
+          <div className="text-2xl">🛒</div>
+        </div>
+        <h3 className="text-lg font-bold text-gray-900 mb-2">No Listings</h3>
+        <p className="text-gray-600 text-sm">No marketplace listings to display.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {listings.map((listing: any) => (
+        <div key={listing.id} className="bg-white rounded-xl border-2 border-gray-200 p-4 hover:border-blue-300 transition-colors">
+          <div className="flex gap-3">
+            <div className="w-20 h-20 bg-gradient-to-br from-gray-100 to-gray-50 rounded-lg overflow-hidden flex-shrink-0 border border-gray-300">
+              {listing.images?.[0] && (
+                <img
+                  src={listing.images[0]}
+                  alt={listing.title}
+                  className="w-full h-full object-cover"
+                  loading="lazy"
+                />
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-bold text-gray-900 text-sm truncate">{listing.title}</h3>
+              <p className="text-blue-600 font-bold text-base mt-1">₦{listing.price?.toLocaleString()}</p>
+              <div className="flex items-center gap-1 mt-1">
+                <MapPin size={12} className="text-gray-500" />
+                <p className="text-xs text-gray-600 truncate">{listing.location}</p>
+              </div>
+              {listing.description && (
+                <p className="text-xs text-gray-600 mt-1 line-clamp-2">{listing.description}</p>
+              )}
+              {isOwner && (
+                <div className="flex gap-2 mt-3">
+                  <button 
+                    onClick={() => onEdit(listing)}
+                    className="flex-1 py-1.5 bg-gradient-to-r from-blue-50 to-blue-100 text-blue-600 rounded-lg font-medium hover:from-blue-100 hover:to-blue-200 transition-all border border-blue-200 text-xs"
+                  >
+                    Edit
+                  </button>
+                  <button 
+                    onClick={() => onDelete(listing)}
+                    className="flex-1 py-1.5 bg-gradient-to-r from-red-50 to-red-100 text-red-600 rounded-lg font-medium hover:from-red-100 hover:to-red-200 transition-all border border-red-200 text-xs"
+                  >
+                    Delete
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// Mobile-Optimized Business Grid Component (included in same file)
+const BusinessGridMobile = ({ businesses, isOwner, onEdit, onDelete }: any) => {
+  if (businesses.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <div className="w-16 h-16 bg-gradient-to-br from-gray-100 to-gray-50 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-gray-200">
+          <Building size={24} className="text-gray-400" />
+        </div>
+        <h3 className="text-lg font-bold text-gray-900 mb-2">No Businesses</h3>
+        <p className="text-gray-600 text-sm">No businesses to display.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {businesses.map((business: any) => (
+        <div key={business.id} className="bg-white rounded-xl border-2 border-gray-200 p-3 hover:border-blue-300 transition-colors">
+          <div className="flex gap-3">
+            <div className="w-16 h-16 bg-gradient-to-br from-gray-100 to-gray-50 rounded-lg overflow-hidden flex-shrink-0 border border-gray-300">
+              {business.logo_url && (
+                <img
+                  src={business.logo_url}
+                  alt={business.name}
+                  className="w-full h-full object-cover"
+                  loading="lazy"
+                />
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-bold text-gray-900 text-sm truncate">{business.name}</h3>
+              <div className="flex flex-wrap gap-1 mt-1">
+                <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-medium rounded-full border border-blue-200">
+                  {business.business_type}
+                </span>
+                <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-medium rounded-full border border-purple-200">
+                  {business.category}
+                </span>
+              </div>
+              <p className="text-xs text-gray-600 mt-1 truncate">{business.location_axis}</p>
+              {isOwner && (
+                <div className="flex gap-2 mt-3">
+                  <button 
+                    onClick={() => onEdit(business)}
+                    className="flex-1 py-1.5 bg-gradient-to-r from-blue-50 to-blue-100 text-blue-600 rounded-lg font-medium hover:from-blue-100 hover:to-blue-200 transition-all border border-blue-200 text-xs"
+                  >
+                    Edit
+                  </button>
+                  <button 
+                    onClick={() => onDelete(business)}
+                    className="flex-1 py-1.5 bg-gradient-to-r from-red-50 to-red-100 text-red-600 rounded-lg font-medium hover:from-red-100 hover:to-red-200 transition-all border border-red-200 text-xs"
+                  >
+                    Delete
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// Mobile-Optimized Job Grid Component (included in same file)
+const JobGridMobile = ({ jobs, isOwner, onEdit, onDelete }: any) => {
+  if (jobs.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <div className="w-16 h-16 bg-gradient-to-br from-gray-100 to-gray-50 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-gray-200">
+          <Briefcase size={24} className="text-gray-400" />
+        </div>
+        <h3 className="text-lg font-bold text-gray-900 mb-2">No Jobs</h3>
+        <p className="text-gray-600 text-sm">No job listings to display.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {jobs.map((job: any) => (
+        <div key={job.id} className="bg-white rounded-xl border-2 border-gray-200 p-3 hover:border-blue-300 transition-colors">
+          <h3 className="font-bold text-gray-900 text-sm">{job.title}</h3>
+          <div className="flex items-center gap-2 mt-1">
+            {job.salary && (
+              <span className="text-blue-600 font-bold text-base">{job.salary}</span>
+            )}
+            <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs font-medium rounded-full border border-green-200">
+              {job.job_type}
+            </span>
+          </div>
+          {job.location && (
+            <div className="flex items-center gap-1 mt-2">
+              <MapPin size={12} className="text-gray-500" />
+              <p className="text-xs text-gray-600">{job.location}</p>
+            </div>
+          )}
+          {job.description && (
+            <p className="text-xs text-gray-600 mt-2">{job.description}</p>
+          )}
+          {isOwner && (
+            <div className="flex gap-2 mt-3">
+              <button 
+                onClick={() => onEdit(job)}
+                className="flex-1 py-1.5 bg-gradient-to-r from-blue-50 to-blue-100 text-blue-600 rounded-lg font-medium hover:from-blue-100 hover:to-blue-200 transition-all border border-blue-200 text-xs"
+              >
+                Edit
+              </button>
+              <button 
+                onClick={() => onDelete(job)}
+                className="flex-1 py-1.5 bg-gradient-to-r from-red-50 to-red-100 text-red-600 rounded-lg font-medium hover:from-red-100 hover:to-red-200 transition-all border border-red-200 text-xs"
+              >
+                Delete
+              </button>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// Mobile-Optimized Event Grid Component (included in same file)
+const EventGridMobile = ({ events, isOwner, onEdit, onDelete }: any) => {
+  if (events.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <div className="w-16 h-16 bg-gradient-to-br from-gray-100 to-gray-50 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-gray-200">
+          <Calendar size={24} className="text-gray-400" />
+        </div>
+        <h3 className="text-lg font-bold text-gray-900 mb-2">No Events</h3>
+        <p className="text-gray-600 text-sm">No events to display.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {events.map((event: any) => (
+        <div key={event.id} className="bg-white rounded-xl border-2 border-gray-200 p-3 hover:border-blue-300 transition-colors">
+          <h3 className="font-bold text-gray-900 text-sm">{event.title}</h3>
+          <div className="flex flex-col gap-1 mt-1">
+            <span className="text-xs text-gray-600 flex items-center gap-1">
+              <Calendar size={12} />
+              {new Date(event.event_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            </span>
+            {event.location && (
+              <span className="text-xs text-gray-600 flex items-center gap-1">
+                <MapPin size={12} />
+                {event.location.split(',')[0]}
+              </span>
+            )}
+          </div>
+          {event.description && (
+            <p className="text-xs text-gray-600 mt-2">{event.description}</p>
+          )}
+          {event.rsvp_count > 0 && (
+            <div className="mt-2">
+              <span className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs font-medium rounded-full border border-purple-200">
+                {event.rsvp_count} RSVPs
+              </span>
+            </div>
+          )}
+          {isOwner && (
+            <div className="flex gap-2 mt-3">
+              <button 
+                onClick={() => onEdit(event)}
+                className="flex-1 py-1.5 bg-gradient-to-r from-blue-50 to-blue-100 text-blue-600 rounded-lg font-medium hover:from-blue-100 hover:to-blue-200 transition-all border border-blue-200 text-xs"
+              >
+                Edit
+              </button>
+              <button 
+                onClick={() => onDelete(event)}
+                className="flex-1 py-1.5 bg-gradient-to-r from-red-50 to-red-100 text-red-600 rounded-lg font-medium hover:from-red-100 hover:to-red-200 transition-all border border-red-200 text-xs"
+              >
+                Delete
+              </button>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// Main Profile Component
 const Profile: React.FC = () => {
-  const { userId } = useParams<{ userId?: string }>();
-  const navigate = useNavigate();
-  
-  // State Management
-  const [activeTab, setActiveTab] = useState('posts');
-  const [profileData, setProfileData] = useState<ProfileData | null>(null);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [pendingConnection, setPendingConnection] = useState<any>(null);
-  const [posts, setPosts] = useState<any[]>([]);
-  const [listings, setListings] = useState<any[]>([]);
-  const [businesses, setBusinesses] = useState<any[]>([]);
-  const [jobs, setJobs] = useState<any[]>([]);
-  const [events, setEvents] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [showConnectionModal, setShowConnectionModal] = useState(false);
-  const [showConnectModal, setShowConnectModal] = useState(false);
-  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
-  const [showAcceptModal, setShowAcceptModal] = useState(false);
-  const [showRejectModal, setShowRejectModal] = useState(false);
-  const [modalAction, setModalAction] = useState<'connect' | 'withdraw' | 'accept' | 'reject' | 'disconnect' | null>(null);
-  const [selectedItem, setSelectedItem] = useState<any>(null);
-  const [actionType, setActionType] = useState<'edit' | 'delete'>('edit');
-  const [uploadingAvatar, setUploadingAvatar] = useState(false);
-  const [uploadingHeader, setUploadingHeader] = useState(false);
-  const [showOptionsMenu, setShowOptionsMenu] = useState(false);
-  const [showShareMenu, setShowShareMenu] = useState(false);
-  const [notification, setNotification] = useState<{
-    type: 'success' | 'error' | 'info';
-    message: string;
-  } | null>(null);
-  
+  const {
+    // State
+    activeTab,
+    setActiveTab,
+    profileData,
+    pendingConnection,
+    posts,
+    listings,
+    businesses,
+    jobs,
+    events,
+    loading,
+    showEditModal,
+    setShowEditModal,
+    showDeleteModal,
+    setShowDeleteModal,
+    showConnectionModal,
+    setShowConnectionModal,
+    showConnectModal,
+    setShowConnectModal,
+    showWithdrawModal,
+    setShowWithdrawModal,
+    showAcceptModal,
+    setShowAcceptModal,
+    showRejectModal,
+    setShowRejectModal,
+    modalAction,
+    selectedItem,
+    actionType,
+    uploadingAvatar,
+    uploadingHeader,
+    showOptionsMenu,
+    setShowOptionsMenu,
+    showShareMenu,
+    setShowShareMenu,
+    notification,
+    
+    // Derived State
+    isOwner,
+    isConnected,
+    isVerifiedUser,
+    
+    // Functions
+    navigate,
+    showNotification,
+    handleConnect,
+    handleWithdraw,
+    handleAccept,
+    handleReject,
+    handleDisconnect,
+    confirmAction,
+    isCurrentUserSender,
+    isCurrentUserReceiver,
+    handleEditProfile,
+    handleEditItem,
+    handleDeleteItem,
+    confirmDelete,
+    handleSaveEdit,
+    handleAvatarUpload,
+    handleHeaderUpload,
+    removeAvatar,
+    removeHeader,
+    shareProfile,
+    toggleLike,
+    sharePost,
+    handleCloseEditModal,
+  handleCloseDeleteModal,
+  } = useProfile();
+
   // Refs
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const headerInputRef = useRef<HTMLInputElement>(null);
   const optionsMenuRef = useRef<HTMLDivElement>(null);
   const shareMenuRef = useRef<HTMLDivElement>(null);
-  const notificationTimeoutRef = useRef<NodeJS.Timeout>();
 
-  // Get current user ID
-  useEffect(() => {
-    const getCurrentUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user?.id) {
-        setCurrentUserId(session.user.id);
-      }
-    };
-    getCurrentUser();
-  }, []);
-
-  // Derived state
-  const isOwner = profileData?.relationship?.is_owner;
-  const isConnected = profileData?.relationship?.is_connected;
-  const connectionStatus = profileData?.relationship?.connection_status;
-  const isVerifiedUser = profileData?.profile?.user_status === 'verified';
-
-  /**
-   * Show notification with auto-dismiss
-   */
-  const showNotification = (type: 'success' | 'error' | 'info', message: string) => {
-    if (notificationTimeoutRef.current) {
-      clearTimeout(notificationTimeoutRef.current);
-    }
-    
-    setNotification({ type, message });
-    
-    notificationTimeoutRef.current = setTimeout(() => {
-      setNotification(null);
-    }, 3000);
+  const triggerAvatarUpload = () => {
+    avatarInputRef.current?.click();
   };
 
-  /**
-   * Initial data loading on component mount
-   */
-  useEffect(() => {
-    loadProfileData();
-    
-    // Close menus when clicking outside
-    const handleClickOutside = (event: MouseEvent) => {
-      if (optionsMenuRef.current && !optionsMenuRef.current.contains(event.target as Node)) {
-        setShowOptionsMenu(false);
-      }
-      if (shareMenuRef.current && !shareMenuRef.current.contains(event.target as Node)) {
-        setShowShareMenu(false);
-      }
-    };
-    
-    document.addEventListener('mousedown', handleClickOutside);
-    
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      if (notificationTimeoutRef.current) {
-        clearTimeout(notificationTimeoutRef.current);
-      }
-    };
-  }, [userId]);
+  const triggerHeaderUpload = () => {
+    headerInputRef.current?.click();
+  };
 
-  /**
-   * Load pending connection when profile data or current user changes
-   */
-  useEffect(() => {
-    if (currentUserId && profileData?.profile?.id && !isOwner) {
-      fetchPendingConnection();
-    }
-  }, [currentUserId, profileData?.profile?.id, isOwner]);
-
-  /**
-   * Load tab data when tab changes
-   */
-  useEffect(() => {
-    if (profileData?.profile?.id) {
-      loadTabData(activeTab, profileData.profile.id);
-    }
-  }, [activeTab, profileData?.profile?.id]);
-
-  /**
-   * FETCH PENDING CONNECTION
-   */
-  const fetchPendingConnection = async () => {
-    if (!currentUserId || !profileData?.profile?.id || isOwner) return;
-
-    try {
-      console.log('Fetching pending connection between:', {
-        currentUserId,
-        profileId: profileData.profile.id
-      });
-
-      const { data, error } = await supabase
-        .from('connections')
-        .select('*')
-        .or(`user_id.eq.${currentUserId},connected_user_id.eq.${currentUserId}`)
-        .or(`user_id.eq.${profileData.profile.id},connected_user_id.eq.${profileData.profile.id}`)
-        .eq('status', 'pending');
-
-      console.log('Connection query result:', { data, error });
-
-      if (error) {
-        console.error('Error fetching pending connection:', error);
-        return;
-      }
-
-      if (data && data.length > 0) {
-        const connection = data.find(conn => 
-          (conn.user_id === currentUserId && conn.connected_user_id === profileData.profile.id) ||
-          (conn.user_id === profileData.profile.id && conn.connected_user_id === currentUserId)
-        );
-        
-        console.log('Found connection:', connection);
-        setPendingConnection(connection || null);
-      } else {
-        setPendingConnection(null);
-      }
-    } catch (error) {
-      console.error('Error in fetchPendingConnection:', error);
+  const handleAvatarFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      handleAvatarUpload(file);
     }
   };
 
-  /**
-   * Load profile data including relationship status
-   */
-  const loadProfileData = async () => {
-    try {
-      setLoading(true);
-      const data = await profileService.getProfileData(
-        userId || 'current', 
-        'current'
-      );
-      setProfileData(data);
-    } catch (error) {
-      console.error('Error loading profile:', error);
-      showNotification('error', 'Failed to load profile. Please try again.');
-    } finally {
-      setLoading(false);
+  const handleHeaderFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      handleHeaderUpload(file);
     }
   };
 
-  /**
-   * Load data for active tab
-   */
-  /**
- * Load data for active tab
- */
-const loadTabData = async (tab: string, profileId: string) => {
-  if (!profileData?.relationship?.is_owner && !profileData?.relationship?.is_connected) {
-    return;
-  }
-
-  try {
-    switch (tab) {
-      case 'posts':
-        const postsData = await profileService.getUserPosts(profileId, 'current');
-        setPosts(postsData);
-        break;
-      case 'marketplace':
-        const listingsData = await profileService.getUserListings(profileId, 'current');
-        setListings(listingsData);
-        break;
-      case 'businesses':
-        const businessesData = await profileService.getUserBusinesses(profileId, 'current');
-        setBusinesses(businessesData);
-        break;
-      case 'jobs':
-        const jobsData = await profileService.getUserJobs(profileId, 'current');
-        setJobs(jobsData);
-        break;
-      case 'events':
-        const eventsData = await profileService.getUserEvents(profileId, 'current');
-        setEvents(eventsData);
-        break;
-    }
-  } catch (error) {
-    showNotification('error', `Failed to load ${tab}. Please try again.`);
-  }
-};
-
-  /**
-   * Handle connect action with confirmation modal
-   */
-  const handleConnect = () => {
-    setModalAction('connect');
-    setShowConnectModal(true);
-  };
-
-  /**
-   * Handle withdraw action with confirmation modal
-   */
-  const handleWithdraw = () => {
-    setModalAction('withdraw');
-    setShowWithdrawModal(true);
-  };
-
-  /**
-   * Handle accept action with confirmation modal
-   */
-  const handleAccept = () => {
-    setModalAction('accept');
-    setShowAcceptModal(true);
-  };
-
-  /**
-   * Handle reject action with confirmation modal
-   */
-  const handleReject = () => {
-    setModalAction('reject');
-    setShowRejectModal(true);
-  };
-
-  /**
-   * Handle disconnect action with confirmation modal
-   */
-  const handleDisconnect = () => {
-    setModalAction('disconnect');
-    setShowConnectionModal(true);
-  };
-
-  /**
-   * CONFIRM ACTION
-   */
-  const confirmAction = async () => {
-    if (!profileData?.profile?.id || !currentUserId) {
-      showNotification('error', 'Unable to complete action. Please try again.');
-      return;
-    }
-
-    const profileId = profileData.profile.id;
-    
-    try {
-      console.log('Confirming action:', {
-        modalAction,
-        currentUserId,
-        profileId,
-        pendingConnectionId: pendingConnection?.id
-      });
-
-      switch (modalAction) {
-        case 'connect':
-          const { data: connectData, error: connectError } = await supabase
-            .from('connections')
-            .insert({
-              user_id: currentUserId,
-              connected_user_id: profileId,
-              status: 'pending'
-            })
-            .select()
-            .single();
-
-          if (connectError) {
-            console.error('Connection insert error:', connectError);
-            
-            if (connectError.code === '23505') {
-              showNotification('info', 'Connection already exists or request already sent');
-            } else {
-              throw new Error(`Failed to send connection request: ${connectError.message}`);
-            }
-          } else {
-            console.log('Connection created successfully:', connectData);
-            showNotification('success', 'Connection request sent successfully');
-          }
-          
-          await fetchPendingConnection();
-          break;
-
-        case 'withdraw':
-          if (!pendingConnection) {
-            showNotification('error', 'No pending connection found to withdraw');
-            return;
-          }
-
-          console.log('Withdrawing connection:', pendingConnection.id);
-          const { error: withdrawError } = await supabase
-            .from('connections')
-            .delete()
-            .eq('id', pendingConnection.id);
-
-          if (withdrawError) {
-            console.error('Withdraw error:', withdrawError);
-            throw new Error(`Failed to withdraw connection: ${withdrawError.message}`);
-          }
-
-          console.log('Connection withdrawn successfully');
-          showNotification('success', 'Connection request withdrawn');
-          setPendingConnection(null);
-          break;
-
-        case 'accept':
-          if (!pendingConnection) {
-            showNotification('error', 'No pending connection found to accept');
-            return;
-          }
-
-          console.log('Accepting connection:', pendingConnection.id);
-          const { error: acceptError } = await supabase
-            .from('connections')
-            .update({ 
-              status: 'accepted',
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', pendingConnection.id);
-
-          if (acceptError) {
-            console.error('Accept error:', acceptError);
-            throw new Error(`Failed to accept connection: ${acceptError.message}`);
-          }
-
-          console.log('Connection accepted successfully');
-          showNotification('success', 'Connection request accepted');
-          setPendingConnection(null);
-          await loadProfileData();
-          break;
-
-        case 'reject':
-          if (!pendingConnection) {
-            showNotification('error', 'No pending connection found to reject');
-            return;
-          }
-
-          console.log('Rejecting connection:', pendingConnection.id);
-          const { error: rejectError } = await supabase
-            .from('connections')
-            .update({ 
-              status: 'rejected',
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', pendingConnection.id);
-
-          if (rejectError) {
-            console.error('Reject error:', rejectError);
-            throw new Error(`Failed to reject connection: ${rejectError.message}`);
-          }
-
-          console.log('Connection rejected successfully');
-          showNotification('success', 'Connection request rejected');
-          setPendingConnection(null);
-          break;
-
-        case 'disconnect':
-          console.log('Disconnecting users...');
-          
-          const { data: connectionData, error: findError } = await supabase
-            .from('connections')
-            .select('id')
-            .or(`and(user_id.eq.${currentUserId},connected_user_id.eq.${profileId}),and(user_id.eq.${profileId},connected_user_id.eq.${currentUserId})`)
-            .eq('status', 'accepted')
-            .maybeSingle();
-
-          if (findError) {
-            console.error('Find connection error:', findError);
-            throw new Error(`Failed to find connection: ${findError.message}`);
-          }
-
-          if (!connectionData) {
-            showNotification('info', 'No active connection found');
-            return;
-          }
-
-          console.log('Deleting connection:', connectionData.id);
-          const { error: deleteError } = await supabase
-            .from('connections')
-            .delete()
-            .eq('id', connectionData.id);
-
-          if (deleteError) {
-            console.error('Delete connection error:', deleteError);
-            throw new Error(`Failed to remove connection: ${deleteError.message}`);
-          }
-
-          console.log('Connection removed successfully');
-          showNotification('success', 'Connection removed successfully');
-          await loadProfileData();
-          break;
-      }
-    } catch (error: any) {
-      console.error('Error in confirmAction:', error);
-      
-      let userMessage = 'Failed to complete action. Please try again.';
-      
-      if (error.message.includes('already exists')) {
-        userMessage = 'Connection already exists between you and this user.';
-      } else if (error.message.includes('No pending connection')) {
-        userMessage = 'No connection request found to perform this action.';
-      } else if (error.message.includes('No active connection')) {
-        userMessage = 'No active connection found to disconnect.';
-      }
-      
-      showNotification('error', userMessage);
-    } finally {
-      setShowConnectModal(false);
-      setShowWithdrawModal(false);
-      setShowAcceptModal(false);
-      setShowRejectModal(false);
-      setShowConnectionModal(false);
-      setModalAction(null);
-    }
-  };
-
-  /**
-   * Check if current user sent the connection request
-   */
-  const isCurrentUserSender = () => {
-    if (!pendingConnection || !currentUserId) return false;
-    return pendingConnection.user_id === currentUserId;
-  };
-
-  /**
-   * Check if current user received the connection request
-   */
-  const isCurrentUserReceiver = () => {
-    if (!pendingConnection || !currentUserId) return false;
-    return pendingConnection.connected_user_id === currentUserId;
-  };
-
-  /**
-   * Render connection status indicator
-   */
   const renderConnectionStatus = () => {
     if (isOwner) return null;
 
@@ -516,9 +581,6 @@ const loadTabData = async (tab: string, profileId: string) => {
     return null;
   };
 
-  /**
-   * Render primary action button
-   */
   const renderPrimaryActionButton = () => {
     if (isOwner) {
       return (
@@ -588,246 +650,6 @@ const loadTabData = async (tab: string, profileId: string) => {
     );
   };
 
-  /**
-   * Handle edit profile action
-   */
-  const handleEditProfile = () => {
-    setSelectedItem({ ...profileData?.profile, itemType: 'profile' });
-    setActionType('edit');
-    setShowEditModal(true);
-  };
-
-  /**
-   * Handle edit item action
-   */
-  const handleEditItem = (item: any, type: string) => {
-    setSelectedItem({ ...item, itemType: type });
-    setActionType('edit');
-    setShowEditModal(true);
-  };
-
-  /**
-   * Handle delete item action with confirmation
-   */
-  const handleDeleteItem = (item: any, type: string) => {
-    setSelectedItem({ ...item, itemType: type });
-    setActionType('delete');
-    setShowDeleteModal(true);
-  };
-
-  /**
-   * Confirm delete action
-   */
-  const confirmDelete = async () => {
-    try {
-      switch (selectedItem.itemType) {
-        case 'post':
-          await profileService.deletePost(selectedItem.id);
-          setPosts(prev => prev.filter(p => p.id !== selectedItem.id));
-          break;
-        case 'listing':
-          await profileService.deleteListing(selectedItem.id);
-          setListings(prev => prev.filter(l => l.id !== selectedItem.id));
-          break;
-        case 'business':
-          await profileService.deleteBusiness(selectedItem.id);
-          setBusinesses(prev => prev.filter(b => b.id !== selectedItem.id));
-          break;
-        case 'job':
-          await profileService.deleteJob(selectedItem.id);
-          setJobs(prev => prev.filter(j => j.id !== selectedItem.id));
-          break;
-        case 'event':
-          await profileService.deleteEvent(selectedItem.id);
-          setEvents(prev => prev.filter(e => e.id !== selectedItem.id));
-          break;
-        case 'avatar':
-          await profileService.removeProfileAvatar();
-          await loadProfileData();
-          break;
-        case 'header':
-          await profileService.removeProfileHeader();
-          await loadProfileData();
-          break;
-      }
-      showNotification('success', `${selectedItem.itemType} deleted successfully`);
-      setShowDeleteModal(false);
-      setSelectedItem(null);
-    } catch (error) {
-      showNotification('error', 'Failed to delete. Please try again.');
-    }
-  };
-
-  /**
-   * Handle save edit action
-   */
-  const handleSaveEdit = async (updatedData: any) => {
-    try {
-      const itemType = selectedItem?.itemType;
-      
-      if (itemType === 'profile') {
-        await profileService.updateProfileData(updatedData);
-        await loadProfileData();
-        showNotification('success', 'Profile updated successfully');
-        
-      } else if (itemType === 'listing') {
-        await profileService.updateListing(selectedItem.id, {
-          title: updatedData.title,
-          description: updatedData.description || '',
-          price: updatedData.price,
-          category: updatedData.category || '',
-          condition: updatedData.condition || 'used',
-          location: updatedData.location || ''
-        });
-        const listingsData = await profileService.getUserListings(profileData!.profile.id, 'current');
-        setListings(listingsData);
-        showNotification('success', 'Listing updated successfully');
-        
-      } else if (itemType === 'business') {
-        await profileService.updateBusiness(selectedItem.id, {
-          name: updatedData.name,
-          description: updatedData.description || '',
-          business_type: updatedData.business_type,
-          category: updatedData.category,
-          location_axis: updatedData.location_axis,
-          address: updatedData.address || '',
-          email: updatedData.email || '',
-          phone: updatedData.phone || '',
-          website: updatedData.website || ''
-        });
-        const businessesData = await profileService.getUserBusinesses(profileData!.profile.id, 'current');
-        setBusinesses(businessesData);
-        showNotification('success', 'Business updated successfully');
-        
-      } else if (itemType === 'job') {
-        await profileService.updateJob(selectedItem.id, {
-          title: updatedData.title,
-          description: updatedData.description || '',
-          salary: updatedData.salary || '',
-          job_type: updatedData.job_type || 'full-time',
-          location: updatedData.location || ''
-        });
-        const jobsData = await profileService.getUserJobs(profileData!.profile.id, 'current');
-        setJobs(jobsData);
-        showNotification('success', 'Job updated successfully');
-        
-      } else if (itemType === 'event') {
-        await profileService.updateEvent(selectedItem.id, {
-          title: updatedData.title,
-          description: updatedData.description || '',
-          event_date: updatedData.event_date,
-          location: updatedData.location || ''
-        });
-        const eventsData = await profileService.getUserEvents(profileData!.profile.id, 'current');
-        setEvents(eventsData);
-        showNotification('success', 'Event updated successfully');
-      }
-      
-      setShowEditModal(false);
-      setSelectedItem(null);
-      
-    } catch (error: any) {
-      showNotification('error', 'Failed to save changes. Please try again.');
-      throw error;
-    }
-  };
-
-  /**
-   * Handle avatar upload
-   */
-  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file || !profileData?.profile?.id) return;
-
-    try {
-      setUploadingAvatar(true);
-      await profileService.updateProfileAvatar(file);
-      await loadProfileData();
-      showNotification('success', 'Profile picture updated successfully');
-      
-    } catch (error) {
-      showNotification('error', 'Failed to upload profile picture. Please try again.');
-    } finally {
-      setUploadingAvatar(false);
-      if (avatarInputRef.current) {
-        avatarInputRef.current.value = '';
-      }
-    }
-  };
-
-  /**
-   * Handle header upload
-   */
-  const handleHeaderUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file || !profileData?.profile?.id) return;
-
-    try {
-      setUploadingHeader(true);
-      await profileService.updateProfileHeader(file);
-      await loadProfileData();
-      showNotification('success', 'Cover photo updated successfully');
-      
-    } catch (error) {
-      showNotification('error', 'Failed to upload cover photo. Please try again.');
-    } finally {
-      setUploadingHeader(false);
-      if (headerInputRef.current) {
-        headerInputRef.current.value = '';
-      }
-    }
-  };
-
-  /**
-   * Remove avatar with confirmation modal
-   */
-  const removeAvatar = () => {
-    setSelectedItem({ id: 'avatar', itemType: 'avatar', name: 'profile picture' });
-    setActionType('delete');
-    setShowDeleteModal(true);
-  };
-
-  /**
-   * Remove header with confirmation modal
-   */
-  const removeHeader = () => {
-    setSelectedItem({ id: 'header', itemType: 'header', name: 'cover photo' });
-    setActionType('delete');
-    setShowDeleteModal(true);
-  };
-
-  /**
-   * Share profile URL
-   */
-  const shareProfile = async () => {
-    const profileUrl = `${window.location.origin}/profile/${profileData?.profile.id}`;
-    
-    try {
-      await navigator.clipboard.writeText(profileUrl);
-      showNotification('success', 'Profile link copied to clipboard');
-      setShowShareMenu(false);
-    } catch (error) {
-      prompt('Copy this link:', profileUrl);
-    }
-  };
-
-  /**
-   * Trigger avatar upload
-   */
-  const triggerAvatarUpload = () => {
-    avatarInputRef.current?.click();
-  };
-
-  /**
-   * Trigger header upload
-   */
-  const triggerHeaderUpload = () => {
-    headerInputRef.current?.click();
-  };
-
-  /**
-   * Render restricted access message for members
-   */
   const renderRestrictedAccess = (featureName: string) => {
     return (
       <div className="text-center py-12">
@@ -852,16 +674,10 @@ const loadTabData = async (tab: string, profileId: string) => {
     );
   };
 
-  /**
-   * Loading skeleton
-   */
   if (loading) {
     return <ProfileSkeleton />;
   }
 
-  /**
-   * Profile not found
-   */
   if (!profileData) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white flex items-center justify-center safe-area">
@@ -906,14 +722,14 @@ const loadTabData = async (tab: string, profileId: string) => {
       <input
         type="file"
         ref={avatarInputRef}
-        onChange={handleAvatarUpload}
+        onChange={handleAvatarFileChange}
         accept="image/*"
         className="hidden"
       />
       <input
         type="file"
         ref={headerInputRef}
-        onChange={handleHeaderUpload}
+        onChange={handleHeaderFileChange}
         accept="image/*"
         className="hidden"
       />
@@ -1105,7 +921,7 @@ const loadTabData = async (tab: string, profileId: string) => {
               {profile.first_name} {profile.last_name}
             </h1>
             {isVerifiedUser && (
-              <VerifiedBadge size={15} showLabel={false} />
+              <VerifiedBadge size={15}  />
             )}
           </div>
           {profile.business_name && (
@@ -1188,7 +1004,7 @@ const loadTabData = async (tab: string, profileId: string) => {
           {[
             { key: 'posts', icon: '📝', label: 'Posts', count: stats.posts_count, color: 'from-blue-50 to-blue-100', border: 'border-blue-200' },
             { key: 'connections', icon: '👥', label: 'Connects', count: stats.connections_count, color: 'from-green-50 to-green-100', border: 'border-green-200' },
-            { key: 'marketplace', icon: '🛒', label: 'Items', count: stats.listings_count, color: 'from-purple-50 to-purple-100', border: 'border-purple-200' },
+            { key: 'items', icon: '🛒', label: 'Items', count: stats.listings_count, color: 'from-purple-50 to-purple-100', border: 'border-purple-200' },
           ].map((stat) => (
             <button
               key={stat.key}
@@ -1240,7 +1056,7 @@ const loadTabData = async (tab: string, profileId: string) => {
       {/* Content Tabs */}
       <div className="mt-6 border-t border-gray-200">
         <div className="flex overflow-x-auto border-b border-gray-200 bg-gray-50/50">
-          {['posts', 'marketplace', 'businesses', 'jobs', 'events'].map(tab => (
+          {['posts', 'items', 'businesses', 'jobs', 'events'].map(tab => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -1250,7 +1066,7 @@ const loadTabData = async (tab: string, profileId: string) => {
                   : 'text-gray-500 hover:text-gray-700'
               }`}
             >
-              {tab}
+              {tab === 'items' ? 'Items' : tab}
               {activeTab === tab && (
                 <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600"></div>
               )}
@@ -1265,9 +1081,11 @@ const loadTabData = async (tab: string, profileId: string) => {
               isOwner={isOwner} 
               onDelete={(post) => handleDeleteItem(post, 'post')}
               isVerifiedUser={isVerifiedUser}
+              onToggleLike={toggleLike}
+              onShare={sharePost}
             />
           )}
-          {activeTab === 'marketplace' && (
+          {activeTab === 'items' && (
             isVerifiedUser ? (
               <ListingGridMobile 
                 listings={listings} 
@@ -1426,442 +1244,20 @@ const loadTabData = async (tab: string, profileId: string) => {
 
       {/* Modals */}
       <EditModal
-        type={selectedItem?.itemType || 'profile'}
-        data={selectedItem}
-        isOpen={showEditModal}
-        onClose={() => {
-          setShowEditModal(false);
-          setSelectedItem(null);
-        }}
-        onSave={handleSaveEdit}
-      />
+  type={selectedItem?.itemType || 'profile'}
+  data={selectedItem}
+  isOpen={showEditModal}
+  onClose={handleCloseEditModal} // Use this instead
+  onSave={handleSaveEdit}
+/>
 
       <DeleteModal
-        type={selectedItem?.itemType}
-        name={selectedItem?.title || selectedItem?.name || selectedItem?.first_name}
-        isOpen={showDeleteModal}
-        onClose={() => {
-          setShowDeleteModal(false);
-          setSelectedItem(null);
-        }}
-        onConfirm={confirmDelete}
-      />
-    </div>
-  );
-};
-
-/**
- * Reusable Confirmation Modal Component
- */
-const ConfirmationModal: React.FC<{
-  title: string;
-  message: string;
-  confirmText: string;
-  confirmColor: string;
-  icon: React.ReactNode;
-  isOpen: boolean;
-  onClose: () => void;
-  onConfirm: () => void;
-}> = ({ title, message, confirmText, confirmColor, icon, isOpen, onClose, onConfirm }) => {
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div 
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm animate-fadeIn"
-        onClick={onClose}
-      />
-      <div className="relative bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-sm p-6 animate-scaleIn">
-        <div className="flex items-center justify-center mb-6">
-          <div className="w-16 h-16 bg-gradient-to-br from-gray-100 to-gray-50 rounded-full flex items-center justify-center border border-gray-200">
-            {icon}
-          </div>
-        </div>
-        <h3 className="text-xl font-bold text-gray-900 text-center mb-3">{title}</h3>
-        <p className="text-gray-600 text-center mb-6 text-sm leading-relaxed">
-          {message}
-        </p>
-        <div className="flex gap-3">
-          <button
-            onClick={onClose}
-            className="flex-1 py-3 bg-gray-100 text-gray-700 rounded-xl font-bold hover:bg-gray-200 active:scale-[0.98] transition-all min-h-[44px] border border-gray-300"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            className={`flex-1 py-3 bg-gradient-to-r ${confirmColor} text-white rounded-xl font-bold hover:opacity-90 active:scale-[0.98] transition-all min-h-[44px]`}
-          >
-            {confirmText}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-/**
- * Loading Skeleton Component
- */
-const ProfileSkeleton = () => (
-  <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white safe-area">
-    <div className="h-48 bg-gradient-to-r from-gray-200 to-gray-300 animate-pulse border-b border-gray-300"></div>
-    <div className="px-4 -mt-16">
-      <div className="w-32 h-32 bg-gray-300 rounded-full mx-auto animate-pulse border-4 border-white border border-gray-400"></div>
-    </div>
-    <div className="pt-20 px-4 text-center space-y-4">
-      <div className="h-8 bg-gray-300 rounded w-1/2 mx-auto animate-pulse border border-gray-400"></div>
-      <div className="h-4 bg-gray-200 rounded w-3/4 mx-auto animate-pulse border border-gray-300"></div>
-      <div className="h-4 bg-gray-200 rounded w-1/3 mx-auto animate-pulse border border-gray-300"></div>
-    </div>
-    <div className="px-4 mt-8">
-      <div className="grid grid-cols-3 gap-3">
-        {[...Array(6)].map((_, i) => (
-          <div key={i} className="h-20 bg-gray-200 rounded-xl animate-pulse border border-gray-300"></div>
-        ))}
-      </div>
-    </div>
-  </div>
-);
-
-/**
- * Mobile-Optimized Post Grid Component
- */
-const PostGridMobile = ({ posts, isOwner, onDelete, isVerifiedUser }: any) => {
-  if (posts.length === 0) {
-    return (
-      <div className="text-center py-12">
-        <div className="w-16 h-16 bg-gradient-to-br from-gray-100 to-gray-50 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-gray-200">
-          <div className="text-2xl">📝</div>
-        </div>
-        <h3 className="text-lg font-bold text-gray-900 mb-2">No Posts</h3>
-        <p className="text-gray-600 text-sm">No posts to display.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      {posts.map((post: any) => (
-        <div key={post.id} className="bg-white rounded-xl border-2 border-gray-200 overflow-hidden hover:border-blue-300 transition-colors">
-          <div className="p-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-3">
-                {/* Post Author Avatar with Verification Badge */}
-                <div className="relative w-10 h-10 rounded-full bg-gradient-to-br from-blue-100 to-purple-100 overflow-hidden flex items-center justify-center border border-blue-200">
-                  {post.author_avatar_url ? (
-                    <div className="relative w-full h-full">
-                      <img src={post.author_avatar_url} alt={post.author_name} className="w-full h-full object-cover" />
-                      {/* Verification Badge on Post Author Avatar */}
-                      {isVerifiedUser && (
-                        <div className="absolute -bottom-1 -right-1 z-10">
-                          <VerifiedBadge size={8} />
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-400 to-purple-500 text-white text-sm font-bold">
-                      {post.author_name?.charAt(0)}
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <div className="flex items-center gap-1">
-                    <h4 className="font-bold text-gray-900">{post.author_name}</h4>
-                    {/* Verification Badge next to Post Author Name */}
-                    {isVerifiedUser && <VerifiedBadge size={8} />}
-                  </div>
-                  <p className="text-xs text-gray-500">{formatTimeAgo(post.created_at)}</p>
-                </div>
-              </div>
-              {isOwner && (
-                <button 
-                  onClick={() => onDelete(post)}
-                  className="w-10 h-10 flex items-center justify-center text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors min-h-[40px] min-w-[40px] border border-gray-200"
-                  aria-label="Delete post"
-                >
-                  <Trash2 size={18} />
-                </button>
-              )}
-            </div>
-
-            {post.content && (
-              <div className="mb-3">
-                <p className="text-gray-800 whitespace-pre-line leading-relaxed">{post.content}</p>
-              </div>
-            )}
-
-            {post.media_urls && post.media_urls.length > 0 && (
-              <div className="rounded-lg overflow-hidden border border-gray-300">
-                <img
-                  src={post.media_urls[0]}
-                  alt="Post media"
-                  className="w-full h-48 object-cover"
-                  loading="lazy"
-                />
-              </div>
-            )}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-};
-
-/**
- * Mobile-Optimized Listing Grid Component
- */
-/**
- * Mobile-Optimized Listing Grid Component
- */
-const ListingGridMobile = ({ listings, isOwner, onEdit, onDelete }: any) => {
-  if (listings.length === 0) {
-    return (
-      <div className="text-center py-12">
-        <div className="w-16 h-16 bg-gradient-to-br from-gray-100 to-gray-50 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-gray-200">
-          <div className="text-2xl">🛒</div>
-        </div>
-        <h3 className="text-lg font-bold text-gray-900 mb-2">No Listings</h3>
-        <p className="text-gray-600 text-sm">No marketplace listings to display.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      {listings.map((listing: any) => (
-        <div key={listing.id} className="bg-white rounded-xl border-2 border-gray-200 p-4 hover:border-blue-300 transition-colors">
-          <div className="flex gap-4">
-            <div className="w-24 h-24 bg-gradient-to-br from-gray-100 to-gray-50 rounded-lg overflow-hidden flex-shrink-0 border border-gray-300">
-              {listing.images?.[0] && (
-                <img
-                  src={listing.images[0]}
-                  alt={listing.title}
-                  className="w-full h-full object-cover"
-                  loading="lazy"
-                />
-              )}
-            </div>
-            <div className="flex-1 min-w-0">
-              <h3 className="font-bold text-gray-900 truncate">{listing.title}</h3>
-              <p className="text-blue-600 font-bold text-lg mt-2">₦{listing.price?.toLocaleString()}</p>
-              <div className="flex items-center gap-2 mt-2">
-                <MapPin size={14} className="text-gray-500" />
-                <p className="text-xs text-gray-600 truncate">{listing.location}</p>
-              </div>
-              {listing.description && (
-                <p className="text-sm text-gray-600 mt-2 line-clamp-2">{listing.description}</p>
-              )}
-              {isOwner && (
-                <div className="flex gap-3 mt-4">
-                  <button 
-                    onClick={() => onEdit(listing)}
-                    className="flex-1 py-2 bg-gradient-to-r from-blue-50 to-blue-100 text-blue-600 rounded-lg font-medium hover:from-blue-100 hover:to-blue-200 transition-all border border-blue-200"
-                  >
-                    Edit
-                  </button>
-                  <button 
-                    onClick={() => onDelete(listing)}
-                    className="flex-1 py-2 bg-gradient-to-r from-red-50 to-red-100 text-red-600 rounded-lg font-medium hover:from-red-100 hover:to-red-200 transition-all border border-red-200"
-                  >
-                    Delete
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-};
-/**
- * Mobile-Optimized Business Grid Component
- */
-const BusinessGridMobile = ({ businesses, isOwner, onEdit, onDelete }: any) => {
-  if (businesses.length === 0) {
-    return (
-      <div className="text-center py-12">
-        <div className="w-16 h-16 bg-gradient-to-br from-gray-100 to-gray-50 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-gray-200">
-          <Building size={24} className="text-gray-400" />
-        </div>
-        <h3 className="text-lg font-bold text-gray-900 mb-2">No Businesses</h3>
-        <p className="text-gray-600 text-sm">No businesses to display.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      {businesses.map((business: any) => (
-        <div key={business.id} className="bg-white rounded-xl border-2 border-gray-200 p-4 hover:border-blue-300 transition-colors">
-          <div className="flex gap-4">
-            <div className="w-20 h-20 bg-gradient-to-br from-gray-100 to-gray-50 rounded-lg overflow-hidden flex-shrink-0 border border-gray-300">
-              {business.logo_url && (
-                <img
-                  src={business.logo_url}
-                  alt={business.name}
-                  className="w-full h-full object-cover"
-                  loading="lazy"
-                />
-              )}
-            </div>
-            <div className="flex-1 min-w-0">
-              <h3 className="font-bold text-gray-900 truncate">{business.name}</h3>
-              <div className="flex flex-wrap gap-2 mt-2">
-                <span className="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full border border-blue-200">
-                  {business.business_type}
-                </span>
-                <span className="px-3 py-1 bg-purple-100 text-purple-700 text-xs font-medium rounded-full border border-purple-200">
-                  {business.category}
-                </span>
-              </div>
-              <p className="text-xs text-gray-600 mt-2 truncate">{business.location_axis}</p>
-              {isOwner && (
-                <div className="flex gap-3 mt-4">
-                  <button 
-                    onClick={() => onEdit(business)}
-                    className="flex-1 py-2 bg-gradient-to-r from-blue-50 to-blue-100 text-blue-600 rounded-lg font-medium hover:from-blue-100 hover:to-blue-200 transition-all border border-blue-200"
-                  >
-                    Edit
-                  </button>
-                  <button 
-                    onClick={() => onDelete(business)}
-                    className="flex-1 py-2 bg-gradient-to-r from-red-50 to-red-100 text-red-600 rounded-lg font-medium hover:from-red-100 hover:to-red-200 transition-all border border-red-200"
-                  >
-                    Delete
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-};
-
-/**
- * Mobile-Optimized Job Grid Component
- */
-const JobGridMobile = ({ jobs, isOwner, onEdit, onDelete }: any) => {
-  if (jobs.length === 0) {
-    return (
-      <div className="text-center py-12">
-        <div className="w-16 h-16 bg-gradient-to-br from-gray-100 to-gray-50 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-gray-200">
-          <Briefcase size={24} className="text-gray-400" />
-        </div>
-        <h3 className="text-lg font-bold text-gray-900 mb-2">No Jobs</h3>
-        <p className="text-gray-600 text-sm">No job listings to display.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      {jobs.map((job: any) => (
-        <div key={job.id} className="bg-white rounded-xl border-2 border-gray-200 p-4 hover:border-blue-300 transition-colors">
-          <h3 className="font-bold text-gray-900">{job.title}</h3>
-          <div className="flex items-center gap-3 mt-2">
-            {job.salary && (
-              <span className="text-blue-600 font-bold">{job.salary}</span>
-            )}
-            <span className="px-3 py-1 bg-green-100 text-green-700 text-xs font-medium rounded-full border border-green-200">
-              {job.job_type}
-            </span>
-          </div>
-          {job.location && (
-            <div className="flex items-center gap-2 mt-3">
-              <MapPin size={14} className="text-gray-500" />
-              <p className="text-sm text-gray-600">{job.location}</p>
-            </div>
-          )}
-          {job.description && (
-            <p className="text-sm text-gray-600 mt-3">{job.description}</p>
-          )}
-          {isOwner && (
-            <div className="flex gap-3 mt-4">
-              <button 
-                onClick={() => onEdit(job)}
-                className="flex-1 py-2 bg-gradient-to-r from-blue-50 to-blue-100 text-blue-600 rounded-lg font-medium hover:from-blue-100 hover:to-blue-200 transition-all border border-blue-200"
-              >
-                Edit
-              </button>
-              <button 
-                onClick={() => onDelete(job)}
-                className="flex-1 py-2 bg-gradient-to-r from-red-50 to-red-100 text-red-600 rounded-lg font-medium hover:from-red-100 hover:to-red-200 transition-all border border-red-200"
-              >
-                Delete
-              </button>
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-};
-
-/**
- * Mobile-Optimized Event Grid Component
- */
-const EventGridMobile = ({ events, isOwner, onEdit, onDelete }: any) => {
-  if (events.length === 0) {
-    return (
-      <div className="text-center py-12">
-        <div className="w-16 h-16 bg-gradient-to-br from-gray-100 to-gray-50 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-gray-200">
-          <Calendar size={24} className="text-gray-400" />
-        </div>
-        <h3 className="text-lg font-bold text-gray-900 mb-2">No Events</h3>
-        <p className="text-gray-600 text-sm">No events to display.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      {events.map((event: any) => (
-        <div key={event.id} className="bg-white rounded-xl border-2 border-gray-200 p-4 hover:border-blue-300 transition-colors">
-          <h3 className="font-bold text-gray-900">{event.title}</h3>
-          <div className="flex items-center gap-4 mt-2">
-            <span className="text-sm text-gray-600 flex items-center gap-2">
-              <Calendar size={14} />
-              {new Date(event.event_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-            </span>
-            {event.location && (
-              <span className="text-sm text-gray-600 flex items-center gap-2">
-                <MapPin size={14} />
-                {event.location.split(',')[0]}
-              </span>
-            )}
-          </div>
-          {event.description && (
-            <p className="text-sm text-gray-600 mt-3">{event.description}</p>
-          )}
-          {event.rsvp_count > 0 && (
-            <div className="mt-3">
-              <span className="px-3 py-1 bg-purple-100 text-purple-700 text-xs font-medium rounded-full border border-purple-200">
-                {event.rsvp_count} RSVPs
-              </span>
-            </div>
-          )}
-          {isOwner && (
-            <div className="flex gap-3 mt-4">
-              <button 
-                onClick={() => onEdit(event)}
-                className="flex-1 py-2 bg-gradient-to-r from-blue-50 to-blue-100 text-blue-600 rounded-lg font-medium hover:from-blue-100 hover:to-blue-200 transition-all border border-blue-200"
-              >
-                Edit
-              </button>
-              <button 
-                onClick={() => onDelete(event)}
-                className="flex-1 py-2 bg-gradient-to-r from-red-50 to-red-100 text-red-600 rounded-lg font-medium hover:from-red-100 hover:to-red-200 transition-all border border-red-200"
-              >
-                Delete
-              </button>
-            </div>
-          )}
-        </div>
-      ))}
+  type={selectedItem?.itemType}
+  name={selectedItem?.title || selectedItem?.name || selectedItem?.first_name}
+  isOpen={showDeleteModal}
+  onClose={handleCloseDeleteModal} // Use this instead
+  onConfirm={confirmDelete}
+/>
     </div>
   );
 };

@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Filter, UserPlus, Check, Clock, MapPin, Building, Map, Users, UserCheck, X, User } from 'lucide-react';
-import { membersService } from '../services/supabase/members';
 import { useConnections } from '../hooks/useConnections';
 import { Member } from '../types/index';
 import { formatTimeAgo } from '../utils/formatters';
@@ -66,7 +65,9 @@ const Members: React.FC = () => {
     acceptRequest,
     rejectRequest,
     withdrawRequest,
-    loadAllConnections
+    loadAllConnections,
+    getMembers,
+    sendConnectionRequest
   } = useConnections();
 
   const marketAreas = useMemo(() => [
@@ -147,7 +148,7 @@ const Members: React.FC = () => {
           
           setTimeout(async () => {
             try {
-              const freshData = await membersService.getMembers(search, businessType, marketArea, 0, 20);
+              const freshData = await getMembers(search, businessType, marketArea, currentPage, 20);
               const filteredFreshData = filterOutAdmins(freshData);
               if (isComponentMounted.current) {
                 setMembers(filteredFreshData);
@@ -165,7 +166,7 @@ const Members: React.FC = () => {
         }
       }
 
-      const data = await membersService.getMembers(search, businessType, marketArea, currentPage, 20);
+      const data = await getMembers(search, businessType, marketArea, currentPage, 20);
       
       if (!isComponentMounted.current) return;
 
@@ -228,7 +229,7 @@ const Members: React.FC = () => {
         setFilteredMembers(prev => prev.filter(m => m.id !== memberId));
       }
       
-      await membersService.sendConnectionRequest(memberId);
+      await sendConnectionRequest(memberId);
       await loadAllConnections();
       await appCache.remove(ALL_MEMBERS_CACHE_KEY);
       await loadMembers(true);

@@ -228,7 +228,7 @@ const Header: React.FC<HeaderProps> = ({
                   {/* Verification Badge on Avatar - Positioned outside the frame */}
                   {userStatus === 'verified' && (
                     <div className="absolute -bottom-0.5 -right-0.5 z-10">
-                      <VerifiedBadge size={10} className="drop-shadow-md" />
+                      <VerifiedBadge size={13} className="drop-shadow-md" />
                     </div>
                   )}
                 </div>

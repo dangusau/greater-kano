@@ -1,32 +1,10 @@
+// services/supabase/profile.ts
 import { supabase } from './client';
 
-// Cache keys
-const CACHE_KEYS = {
-  PROFILE: 'profile_cache',
-  POSTS: 'posts_cache',
-  LISTINGS: 'listings_cache',
-  BUSINESSES: 'businesses_cache',
-  JOBS: 'jobs_cache',
-  EVENTS: 'events_cache',
-};
-
-// Cache expiry time (5 minutes)
-const CACHE_EXPIRY = 5 * 60 * 1000;
-
-interface CacheData {
-  data: any;
-  timestamp: number;
-  key: string;
-}
-
-/**
- * Cache utility functions
- */
 const cacheService = {
-  // Save data to cache
   saveToCache(key: string, data: any): void {
     try {
-      const cacheData: CacheData = {
+      const cacheData = {
         data,
         timestamp: Date.now(),
         key,
@@ -37,17 +15,15 @@ const cacheService = {
     }
   },
 
-  // Get data from cache
   getFromCache(key: string): any | null {
     try {
       const cached = localStorage.getItem(key);
       if (!cached) return null;
 
-      const cacheData: CacheData = JSON.parse(cached);
+      const cacheData = JSON.parse(cached);
       const now = Date.now();
 
-      // Check if cache is expired
-      if (now - cacheData.timestamp > CACHE_EXPIRY) {
+      if (now - cacheData.timestamp > 5 * 60 * 1000) {
         localStorage.removeItem(key);
         return null;
       }
@@ -59,16 +35,6 @@ const cacheService = {
     }
   },
 
-  // Clear specific cache
-  clearCache(key: string): void {
-    try {
-      localStorage.removeItem(key);
-    } catch (error) {
-      console.warn('Failed to clear cache:', error);
-    }
-  },
-
-  // Clear all profile caches
   clearAllProfileCaches(profileUserId: string): void {
     const prefix = `profile_${profileUserId}_`;
     Object.keys(localStorage).forEach(key => {
@@ -80,15 +46,13 @@ const cacheService = {
 };
 
 export const profileService = {
-  // Cached getter methods
+  // Data fetching methods
   async getProfileData(profileUserId: string, viewerId: string) {
     const cacheKey = `profile_${profileUserId}_${viewerId}_data`;
     
-    // Try to get from cache first
     const cachedData = cacheService.getFromCache(cacheKey);
     if (cachedData) {
       console.log('Loading profile data from cache');
-      // Refresh data in background
       this.refreshProfileDataInBackground(profileUserId, viewerId, cacheKey);
       return cachedData;
     }
@@ -107,7 +71,6 @@ export const profileService = {
       throw error;
     }
 
-    // Save to cache
     cacheService.saveToCache(cacheKey, data);
     return data;
   },
@@ -115,11 +78,9 @@ export const profileService = {
   async getUserPosts(profileUserId: string, viewerId: string) {
     const cacheKey = `profile_${profileUserId}_${viewerId}_posts`;
     
-    // Try to get from cache first
     const cachedData = cacheService.getFromCache(cacheKey);
     if (cachedData) {
       console.log('Loading posts from cache');
-      // Refresh data in background
       this.refreshPostsInBackground(profileUserId, viewerId, cacheKey);
       return cachedData;
     }
@@ -145,11 +106,9 @@ export const profileService = {
   async getUserListings(profileUserId: string, viewerId: string) {
     const cacheKey = `profile_${profileUserId}_${viewerId}_listings`;
     
-    // Try to get from cache first
     const cachedData = cacheService.getFromCache(cacheKey);
     if (cachedData) {
       console.log('Loading listings from cache');
-      // Refresh data in background
       this.refreshListingsInBackground(profileUserId, viewerId, cacheKey);
       return cachedData;
     }
@@ -175,11 +134,9 @@ export const profileService = {
   async getUserBusinesses(profileUserId: string, viewerId: string) {
     const cacheKey = `profile_${profileUserId}_${viewerId}_businesses`;
     
-    // Try to get from cache first
     const cachedData = cacheService.getFromCache(cacheKey);
     if (cachedData) {
       console.log('Loading businesses from cache');
-      // Refresh data in background
       this.refreshBusinessesInBackground(profileUserId, viewerId, cacheKey);
       return cachedData;
     }
@@ -205,11 +162,9 @@ export const profileService = {
   async getUserJobs(profileUserId: string, viewerId: string) {
     const cacheKey = `profile_${profileUserId}_${viewerId}_jobs`;
     
-    // Try to get from cache first
     const cachedData = cacheService.getFromCache(cacheKey);
     if (cachedData) {
       console.log('Loading jobs from cache');
-      // Refresh data in background
       this.refreshJobsInBackground(profileUserId, viewerId, cacheKey);
       return cachedData;
     }
@@ -235,11 +190,9 @@ export const profileService = {
   async getUserEvents(profileUserId: string, viewerId: string) {
     const cacheKey = `profile_${profileUserId}_${viewerId}_events`;
     
-    // Try to get from cache first
     const cachedData = cacheService.getFromCache(cacheKey);
     if (cachedData) {
       console.log('Loading events from cache');
-      // Refresh data in background
       this.refreshEventsInBackground(profileUserId, viewerId, cacheKey);
       return cachedData;
     }
@@ -372,22 +325,66 @@ export const profileService = {
     }
   },
 
-  // Clear all caches for a profile
   clearProfileCache(profileUserId: string): void {
     cacheService.clearAllProfileCaches(profileUserId);
   },
 
-  // Toggle connection
+  // Connection management using RPC functions
   async toggleConnection(targetUserId: string) {
     const { data, error } = await supabase.rpc('toggle_connection_request', {
       p_target_user_id: targetUserId
     });
 
-    if (error) throw error;
+    if (error) {
+      console.error('Toggle connection RPC error:', error);
+      throw error;
+    }
+    
+    console.log('Toggle connection RPC result:', data);
     return data;
   },
 
-  // Update profile data ONLY (no files)
+  async sendConnectionRequest(targetUserId: string) {
+    return this.toggleConnection(targetUserId);
+  },
+
+  async withdrawConnectionRequest(targetUserId: string) {
+    return this.toggleConnection(targetUserId);
+  },
+
+  async disconnectUser(targetUserId: string) {
+    return this.toggleConnection(targetUserId);
+  },
+
+  async acceptConnectionRequest(connectionId: string) {
+    const { data, error } = await supabase.rpc('accept_connection_request', {
+      p_request_id: connectionId
+    });
+
+    if (error) {
+      console.error('Accept connection RPC error:', error);
+      throw error;
+    }
+    
+    console.log('Accept connection RPC result:', data);
+    return { success: true, data };
+  },
+
+  async rejectConnectionRequest(connectionId: string) {
+    const { data, error } = await supabase.rpc('reject_connection_request', {
+      p_request_id: connectionId
+    });
+
+    if (error) {
+      console.error('Reject connection RPC error:', error);
+      throw error;
+    }
+    
+    console.log('Reject connection RPC result:', data);
+    return { success: true, data };
+  },
+
+  // Profile update methods
   async updateProfileData(profileData: any) {
     console.log('updateProfileData called with:', profileData);
 
@@ -422,13 +419,11 @@ export const profileService = {
 
     console.log('Profile updated successfully:', data);
     
-    // Clear profile cache after update
     this.clearProfileCache(user.id);
     
     return { success: true, data };
   },
 
-  // Update profile avatar ONLY
   async updateProfileAvatar(file: File) {
     console.log('updateProfileAvatar called with file:', file.name);
     
@@ -476,13 +471,11 @@ export const profileService = {
 
     console.log('Avatar updated successfully');
     
-    // Clear profile cache after update
     this.clearProfileCache(user.id);
     
     return { success: true, data };
   },
 
-  // Update profile header ONLY
   async updateProfileHeader(file: File) {
     console.log('updateProfileHeader called with file:', file.name);
     
@@ -530,13 +523,11 @@ export const profileService = {
 
     console.log('Header updated successfully');
     
-    // Clear profile cache after update
     this.clearProfileCache(user.id);
     
     return { success: true, data };
   },
 
-  // Remove profile avatar
   async removeProfileAvatar() {
     console.log('removeProfileAvatar called');
     
@@ -560,13 +551,11 @@ export const profileService = {
 
     console.log('Avatar removed successfully');
     
-    // Clear profile cache after update
     this.clearProfileCache(user.id);
     
     return { success: true, data };
   },
 
-  // Remove profile header
   async removeProfileHeader() {
     console.log('removeProfileHeader called');
     
@@ -590,13 +579,12 @@ export const profileService = {
 
     console.log('Header removed successfully');
     
-    // Clear profile cache after update
     this.clearProfileCache(user.id);
     
     return { success: true, data };
   },
 
-  // Delete/Update functions for other items
+  // Content management methods
   async deletePost(postId: string) {
     const { error } = await supabase.rpc('delete_post', {
       p_post_id: postId

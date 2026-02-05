@@ -451,8 +451,8 @@ class MessagingService {
     }
   }
 
-  // Upload media file
-  private async uploadMedia(conversationId: string, file: File): Promise<string> {
+  // Upload media file (Public method now for external use)
+  async uploadMedia(conversationId: string, file: File): Promise<string> {
     try {
       const fileExt = file.name.split('.').pop();
       const fileName = `${conversationId}/${Date.now()}.${fileExt}`;

@@ -108,13 +108,13 @@ const CreateJobModal: React.FC<CreateJobModalProps> = ({ isOpen, onClose, onSubm
                        active:scale-95 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
               aria-label="Close modal"
             >
-              <X size={18} className="text-gray-600" />
+              <X size={21} className="text-gray-600" />
             </button>
           </div>
         </div>
 
         {/* Scrollable Form Content */}
-        <div className="flex-1 overflow-y-auto p-3" style={{ maxHeight: 'calc(85vh - 140px)' }}>
+        <div className="flex-1 overflow-y-auto p-3" style={{ maxHeight: 'calc(82vh - 140px)' }}>
           <form onSubmit={handleSubmit} className="space-y-3">
             {/* Job Title */}
             <div className="space-y-1">

@@ -27,7 +27,7 @@ const DeleteModal: React.FC<Props> = ({ type, name, isOpen, onClose, onConfirm }
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-end md:items-center justify-center p-4">
-      <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-gray-200">
+      <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-gray-200 mb-16 md:mb-0">
         <div className="p-6">
           <div className="flex flex-col items-center text-center mb-6">
             <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4 border border-red-200">

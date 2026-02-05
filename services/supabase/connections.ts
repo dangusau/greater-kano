@@ -1,4 +1,6 @@
+// services/supabase/connections.ts
 import { supabase } from './client';
+import { Member } from '../../types/index';
 
 export interface ConnectionRequest {
   id: string;
@@ -35,6 +37,63 @@ export interface ConnectionStatus {
 }
 
 export const connectionsService = {
+  // ========== MEMBER FUNCTIONS (from old membersService) ==========
+  async getMembers(
+    search?: string, 
+    businessType?: string, 
+    marketArea?: string, 
+    page = 0, 
+    limit = 20
+  ): Promise<Member[]> {
+    const offset = page * limit;
+    
+    try {
+      const { data, error } = await supabase.rpc('get_member_directory', {
+        p_search: search || null,
+        p_business_type: businessType || null,
+        p_market_area: marketArea || null,
+        p_limit: limit,
+        p_offset: offset
+      });
+
+      if (error) throw error;
+      return data || [];
+    } catch {
+      throw new Error('Failed to load members');
+    }
+  },
+
+  async getMemberById(userId: string): Promise<Member | null> {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+
+      if (error) throw error;
+      return data as Member;
+    } catch {
+      return null;
+    }
+  },
+
+  async searchMembers(query: string): Promise<Member[]> {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .or(`first_name.ilike.%${query}%,last_name.ilike.%${query}%,business_name.ilike.%${query}%`)
+        .limit(50);
+
+      if (error) throw error;
+      return data as Member[];
+    } catch {
+      return [];
+    }
+  },
+
+  // ========== CONNECTION FUNCTIONS (from old connectionsService) ==========
   async getReceivedRequests(): Promise<ConnectionRequest[]> {
     const { data, error } = await supabase.rpc('get_received_connection_requests');
     if (error) throw error;
@@ -95,10 +154,23 @@ export const connectionsService = {
   },
 
   async sendConnectionRequest(userId: string): Promise<{ id: string }> {
+  try {
+    console.log('Sending connection request to user:', userId);
+    
     const { data, error } = await supabase.rpc('send_connection_request', {
       p_connected_user_id: userId
     });
-    if (error) throw error;
+    
+    if (error) {
+      console.error('RPC Error:', error);
+      throw error;
+    }
+    
+    console.log('Connection request successful:', data);
     return data;
+  } catch (error: any) {
+    console.error('Failed to send connection request:', error);
+    throw new Error(error.message || 'Failed to send connection request');
   }
+},
 };

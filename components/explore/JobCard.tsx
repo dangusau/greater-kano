@@ -1,7 +1,8 @@
 import React, { useCallback } from 'react';
-import { MapPin, Briefcase, Clock, Mail, Phone, Building, Award, CheckCircle } from 'lucide-react';
+import { MapPin, Briefcase, Clock, Mail, Phone, Building } from 'lucide-react';
 import { Job } from '../../types/explore';
 import { formatTimeAgo } from '../../utils/formatters';
+import VerifiedBadge from '../../components/VerifiedBadge';
 
 interface JobCardProps {
   job: Job;
@@ -18,33 +19,22 @@ const JobCard: React.FC<JobCardProps> = ({ job }) => {
       : `₦${salary}`;
   }, []);
 
-  const getCompanyAvatar = useCallback(() => {
-    if (job.company_avatar) {
-      return (
-        <img 
-          src={job.company_avatar} 
-          alt={job.company_name} 
-          className="w-full h-full object-cover rounded-xl"
-          loading="lazy"
-          decoding="async"
-          onError={(e) => {
-            const target = e.target as HTMLImageElement;
-            target.style.display = 'none';
-            target.parentElement!.innerHTML = `
-              <span class="text-white font-bold text-sm">
-                ${job.company_name?.charAt(0) || 'C'}
-              </span>
-            `;
-          }}
-        />
-      );
+  const getPosterInitials = useCallback(() => {
+    const getInitials = (name: string): string => {
+      if (!name) return 'U';
+      return name
+        .split(' ')
+        .map(word => word.charAt(0))
+        .join('')
+        .toUpperCase()
+        .slice(0, 2);
+    };
+
+    if (job.company_name) {
+      return getInitials(job.company_name);
     }
-    return (
-      <span className="text-white font-bold text-sm">
-        {job.company_name?.charAt(0) || 'C'}
-      </span>
-    );
-  }, [job.company_avatar, job.company_name]);
+    return 'U';
+  }, [job.company_name]);
 
   const getJobTypeStyle = useCallback((): string => {
     switch (job.job_type?.toLowerCase()) {
@@ -87,18 +77,19 @@ const JobCard: React.FC<JobCardProps> = ({ job }) => {
       {/* Header */}
       <div className="bg-gradient-to-r from-blue-50 via-purple-50 to-indigo-50 p-3 border-b border-blue-100">
         <div className="flex items-start gap-3">
-          {/* Company Avatar */}
+          {/* Company Avatar - Modified to show poster initials */}
           <div className="relative">
             <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-500 rounded-lg 
                           flex items-center justify-center shadow-md border-2 border-white overflow-hidden">
-              {getCompanyAvatar()}
+              <span className="text-white font-bold text-sm">
+                {getPosterInitials()}
+              </span>
             </div>
             
-            {/* Premium/Verified Badge */}
+            {/* Premium/Verified Badge - Using our VerifiedBadge component */}
             {job.is_verified && (
-              <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-gradient-to-br from-green-500 to-emerald-500 
-                            rounded-full flex items-center justify-center border-2 border-white shadow-sm">
-                <Award size={8} className="text-white" fill="white" />
+              <div className="absolute -top-1 -right-1 z-50">
+                <VerifiedBadge size={18} />
               </div>
             )}
           </div>
@@ -111,6 +102,12 @@ const JobCard: React.FC<JobCardProps> = ({ job }) => {
                   <h3 className="font-bold text-gray-900 text-sm leading-tight truncate">
                     {job.title}
                   </h3>
+                  {/* Verification badge for poster name */}
+                  {job.is_verified && (
+                    <div className="relative z-50">
+                      <VerifiedBadge size={18} />
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-1">
                   <Building size={12} className="text-blue-500" />
@@ -131,7 +128,7 @@ const JobCard: React.FC<JobCardProps> = ({ job }) => {
             {/* Company Verified Status */}
             {job.company_verified && (
               <div className="flex items-center gap-1 mb-1">
-                <CheckCircle size={10} className="text-green-500" />
+                <VerifiedBadge size={18} />
                 <span className="text-xs text-green-600 font-medium">Verified Company</span>
               </div>
             )}

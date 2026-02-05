@@ -268,7 +268,7 @@ const ListingDetails: React.FC = () => {
     return (
       <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white safe-area">
         {/* Header Skeleton */}
-        <div className="sticky top-0 bg-white/95 backdrop-blur-sm border-b border-blue-200 z-20 safe-area-top">
+        <div className="sticky top-0 bg-white/95 backdrop-blur-sm border-b border-blue-200 safe-area-top">
           <div className="p-4 flex items-center justify-between">
             <div className="w-10 h-10 bg-gradient-to-r from-blue-100 to-blue-50 rounded-xl animate-pulse border border-blue-200"></div>
             <div className="flex gap-2">
@@ -340,7 +340,7 @@ const ListingDetails: React.FC = () => {
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white safe-area">
       {/* Fixed Header with blur effect */}
-      <div className="sticky top-0 bg-white/95 backdrop-blur-sm border-b border-blue-200 z-50 safe-area-top">
+      <div className="sticky top-0 bg-white/95 backdrop-blur-sm border-b border-blue-200 safe-area-top">
         <div className="p-4 flex items-center justify-between">
           <button 
             onClick={() => navigate(-1)}
@@ -605,7 +605,7 @@ const ListingDetails: React.FC = () => {
                 </div>
                 <p className="text-sm text-gray-500 flex items-center gap-1">
                   <Clock size={12} />
-                  Member since {formatTimeAgo(listing.created_at)}
+                  listed {formatTimeAgo(listing.created_at)}
                 </p>
               </div>
             </div>

@@ -225,7 +225,7 @@ const ChatWindow: React.FC = () => {
               return;
             }
             
-            console.log('📨 New realtime message:', newMessage.id);
+          
             
             if (isMounted) {
               // Add the new message
@@ -810,7 +810,7 @@ const ChatWindow: React.FC = () => {
       {/* Media Options Modal */}
       {showMediaOptions && (
         <div className="fixed inset-0 bg-black/50 z-60 flex items-end justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md p-4 mb-16"> {/* Add mb-16 here */}
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-gray-900">Share Media</h3>
               <button
