@@ -1,11 +1,14 @@
+// pages/admin/support/SupportTickets.tsx
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { adminSupportService, SupportTicket } from '../../services/adminSupport'
+import { adminSupportService, SupportTicket } from '../../../services/adminSupport'
 
 const SupportTickets: React.FC = () => {
   const [tickets, setTickets] = useState<SupportTicket[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [priorityFilter, setPriorityFilter] = useState<string>('all')
   const navigate = useNavigate()
 
   useEffect(() => {
@@ -17,13 +20,20 @@ const SupportTickets: React.FC = () => {
     setError(null)
     
     try {
-      const { data, error } = await adminSupportService.getSupportTickets()
+      const filter = statusFilter === 'all' ? undefined : statusFilter
+      const { data, error } = await adminSupportService.getSupportTickets(filter)
       
       if (error) {
         throw new Error(`Failed to load tickets: ${error.message}`)
       }
       
-      setTickets(data || [])
+      // Apply priority filter if needed
+      let filteredTickets = data || []
+      if (priorityFilter !== 'all') {
+        filteredTickets = filteredTickets.filter(ticket => ticket.priority === priorityFilter)
+      }
+      
+      setTickets(filteredTickets)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An unknown error occurred')
       console.error('Error loading tickets:', err)
@@ -98,18 +108,48 @@ const SupportTickets: React.FC = () => {
           </div>
         )}
 
-        {/* Refresh Button */}
-        <div className="mb-6">
-          <button
-            onClick={loadTickets}
-            disabled={loading}
-            className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-          >
-            <svg className="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            Refresh
-          </button>
+        {/* Filters and Refresh Button */}
+        <div className="mb-6 flex flex-col md:flex-row md:items-center gap-4">
+          <div className="flex flex-wrap gap-2">
+            {/* Status Filter */}
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="all">All Status</option>
+              <option value="pending">Pending</option>
+              <option value="in_progress">In Progress</option>
+              <option value="resolved">Resolved</option>
+              <option value="closed">Closed</option>
+            </select>
+
+            {/* Priority Filter */}
+            <select
+              value={priorityFilter}
+              onChange={(e) => setPriorityFilter(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="all">All Priorities</option>
+              <option value="urgent">Urgent</option>
+              <option value="high">High</option>
+              <option value="normal">Normal</option>
+              <option value="low">Low</option>
+            </select>
+          </div>
+
+          <div className="md:ml-auto">
+            <button
+              onClick={loadTickets}
+              disabled={loading}
+              className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+            >
+              <svg className="-ml-1 mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Refresh
+            </button>
+          </div>
         </div>
 
         {/* Tickets Table */}
@@ -119,8 +159,12 @@ const SupportTickets: React.FC = () => {
               <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
               </svg>
-              <h3 className="mt-2 text-sm font-medium text-gray-900">No tickets</h3>
-              <p className="mt-1 text-sm text-gray-500">No support tickets have been created yet.</p>
+              <h3 className="mt-2 text-sm font-medium text-gray-900">No tickets found</h3>
+              <p className="mt-1 text-sm text-gray-500">
+                {statusFilter !== 'all' || priorityFilter !== 'all' 
+                  ? 'Try adjusting your filters' 
+                  : 'No support tickets have been created yet.'}
+              </p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -128,7 +172,10 @@ const SupportTickets: React.FC = () => {
                 <thead className="bg-gray-50">
                   <tr>
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Subject
+                      Ticket Details
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    member
                     </th>
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Status
@@ -159,6 +206,23 @@ const SupportTickets: React.FC = () => {
                           <div className="text-sm text-gray-500 truncate max-w-md">
                             {ticket.message.substring(0, 100)}
                             {ticket.message.length > 100 ? '...' : ''}
+                          </div>
+                          {ticket.category && (
+                            <div className="mt-1">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">
+                                {ticket.category}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col">
+                          <div className="text-sm font-medium text-gray-900">
+                            {ticket.user_name}
+                          </div>
+                          <div className="text-sm text-gray-500 truncate max-w-[200px]">
+                            {ticket.user_email}
                           </div>
                         </div>
                       </td>
@@ -197,6 +261,8 @@ const SupportTickets: React.FC = () => {
         {/* Stats */}
         <div className="mt-4 text-sm text-gray-500">
           Showing {tickets.length} ticket{tickets.length !== 1 ? 's' : ''}
+          {statusFilter !== 'all' && ` (${statusFilter} only)`}
+          {priorityFilter !== 'all' && ` (${priorityFilter} priority)`}
         </div>
       </div>
     </div>

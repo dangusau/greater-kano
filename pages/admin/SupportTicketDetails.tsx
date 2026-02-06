@@ -1,6 +1,7 @@
+// pages/admin/support/SupportTicketDetails.tsx
 import React, { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { adminSupportService, SupportTicket, TicketReply } from '../../services/adminSupport'
+import { adminSupportService, SupportTicket, TicketReply } from '../../../services/adminSupport'
 
 type TicketWithReplies = SupportTicket & {
   replies: TicketReply[]
@@ -192,6 +193,9 @@ const SupportTicketDetails: React.FC = () => {
                 <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-800 border border-gray-300">
                   {ticket.priority} priority
                 </span>
+                <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800 border border-blue-300">
+                  From: {ticket.user_name}
+                </span>
                 <span className="text-sm text-gray-500">
                   Created {formatDateTime(ticket.created_at)}
                 </span>
@@ -231,6 +235,31 @@ const SupportTicketDetails: React.FC = () => {
           </div>
         )}
 
+        {/* Customer Information */}
+        <div className="mb-6 bg-white shadow sm:rounded-lg">
+          <div className="px-4 py-5 sm:px-6">
+            <h3 className="text-lg font-medium text-gray-900">Customer Information</h3>
+          </div>
+          <div className="border-t border-gray-200">
+            <dl>
+              <div className="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                <dt className="text-sm font-medium text-gray-500">Customer Name</dt>
+                <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{ticket.user_name}</dd>
+              </div>
+              <div className="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                <dt className="text-sm font-medium text-gray-500">Email</dt>
+                <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{ticket.user_email}</dd>
+              </div>
+              {ticket.category && (
+                <div className="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                  <dt className="text-sm font-medium text-gray-500">Category</dt>
+                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{ticket.category}</dd>
+                </div>
+              )}
+            </dl>
+          </div>
+        </div>
+
         {/* Original Ticket */}
         <div className="mb-6">
           <div className="bg-white shadow sm:rounded-lg">
@@ -259,7 +288,7 @@ const SupportTicketDetails: React.FC = () => {
                   className={`bg-white shadow sm:rounded-lg ${reply.is_admin ? 'border-l-4 border-blue-500' : 'border-l-4 border-gray-300'}`}
                 >
                   <div className="px-4 py-5 sm:px-6">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between mb-4">
                       <div className="flex items-center">
                         <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
                           reply.is_admin 
@@ -267,6 +296,9 @@ const SupportTicketDetails: React.FC = () => {
                             : 'bg-gray-100 text-gray-800 border border-gray-300'
                         }`}>
                           {reply.is_admin ? 'Admin' : 'Customer'}
+                        </span>
+                        <span className="ml-2 text-sm font-medium text-gray-900">
+                          {reply.created_by_name}
                         </span>
                         <span className="ml-2 text-sm text-gray-500">
                           {formatDateTime(reply.created_at)}
@@ -386,6 +418,12 @@ const SupportTicketDetails: React.FC = () => {
                 <div className="bg-white px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
                   <dt className="text-sm font-medium text-gray-500">Resolved</dt>
                   <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2">{formatDateTime(ticket.resolved_at)}</dd>
+                </div>
+              )}
+              {ticket.admin_notes && (
+                <div className="bg-gray-50 px-4 py-5 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
+                  <dt className="text-sm font-medium text-gray-500">Admin Notes</dt>
+                  <dd className="mt-1 text-sm text-gray-900 sm:mt-0 sm:col-span-2 whitespace-pre-wrap">{ticket.admin_notes}</dd>
                 </div>
               )}
             </dl>
