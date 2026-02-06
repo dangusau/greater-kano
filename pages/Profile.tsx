@@ -9,7 +9,7 @@ import {
   MessageCircle, Share, ExternalLink
 } from 'lucide-react';
 import { useProfile } from '../hooks/useProfile';
-import { formatTimeAgo } from '../../utils/formatters';
+import { formatTimeAgo } from '../utils/formatters';
 import EditModal from '../components/profile/EditModal';
 import DeleteModal from '../components/profile/DeleteModal';
 import VerifiedBadge from '../components/VerifiedBadge';
