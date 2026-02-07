@@ -53,7 +53,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     if (cachedProfile) return cachedProfile;
 
     return new Promise(async resolve => {
-      // queue duplicate requests
       const existingQueue = fetchQueue.find(q => q.userId === userId);
       if (existingQueue) {
         fetchQueue.push({ userId, resolve });
@@ -78,7 +77,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (!error) {
           profile = data;
         } else if (error.code === 'PGRST116') {
-          // create default profile
           const defaultProfile: UserProfile = {
             id: userId,
             email: currentUser?.email ?? '',
@@ -87,6 +85,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             user_status: 'verified',
             avatar_url: ''
           };
+
           const { data: inserted, error: insertError } = await supabase
             .from('profiles')
             .insert(defaultProfile)
@@ -98,7 +97,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         if (profile) await appCache.set(`profile_${userId}`, profile, 10 * 60 * 1000);
 
-        // resolve all queued requests for same userId
         fetchQueue
           .filter(q => q.userId === userId)
           .forEach(q => q.resolve(profile));
@@ -106,8 +104,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         return profile;
       } catch (err) {
-        fetchQueue.splice(0, fetchQueue.length);
         console.error('Profile fetch failed:', err);
+        fetchQueue.splice(0, fetchQueue.length);
         return null;
       } finally {
         isFetchingProfile.current = false;
@@ -119,10 +117,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const initializeAuth = async () => {
     setLoading(true);
+
     try {
-      const {
-        data: { session }
-      } = await supabase.auth.getSession();
+      const { data } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }));
+      const session = data?.session ?? null;
+
       setSession(session);
       setUser(session?.user ?? null);
       setUserProfile(null);
@@ -137,6 +136,30 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setLoading(false);
     }
   };
+
+  /* -------------------- FIX: RECOVER WHEN TAB RESUMES -------------------- */
+
+  useEffect(() => {
+    const onVisible = async () => {
+      if (document.visibilityState === "visible") {
+        const { data } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }));
+        const session = data?.session ?? null;
+
+        setSession(session);
+        setUser(session?.user ?? null);
+
+        if (session?.user?.id) {
+          const profile = await fetchUserProfile(session.user.id, session.user);
+          setUserProfile(profile);
+        } else {
+          setUserProfile(null);
+        }
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
 
   /* -------------------- AUTH STATE LISTENER -------------------- */
 
@@ -204,4 +227,3 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     </AuthContext.Provider>
   );
 };
-
