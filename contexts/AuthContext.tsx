@@ -1,3 +1,4 @@
+// src/context/auth.tsx
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
 import { supabase } from '../services/supabase';
 import { Session, User } from '@supabase/supabase-js';
@@ -47,7 +48,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const fetchQueue: { userId: string; resolve: (p: UserProfile | null) => void }[] = [];
 
   /* -------------------- PROFILE FETCH WITH CACHE -------------------- */
-
   const fetchUserProfile = async (userId: string, currentUser?: User | null): Promise<UserProfile | null> => {
     const cachedProfile = await appCache.get<UserProfile>(`profile_${userId}`);
     if (cachedProfile) return cachedProfile;
@@ -97,15 +97,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         if (profile) await appCache.set(`profile_${userId}`, profile, 10 * 60 * 1000);
 
-        fetchQueue
-          .filter(q => q.userId === userId)
-          .forEach(q => q.resolve(profile));
+        // resolve all queued requests
+        fetchQueue.filter(q => q.userId === userId).forEach(q => q.resolve(profile));
         fetchQueue.splice(0, fetchQueue.length);
 
         return profile;
       } catch (err) {
-        console.error('Profile fetch failed:', err);
         fetchQueue.splice(0, fetchQueue.length);
+        console.error('Profile fetch failed:', err);
         return null;
       } finally {
         isFetchingProfile.current = false;
@@ -114,14 +113,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   /* -------------------- INITIALIZE AUTH -------------------- */
-
   const initializeAuth = async () => {
     setLoading(true);
-
     try {
       const { data } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }));
       const session = data?.session ?? null;
-
       setSession(session);
       setUser(session?.user ?? null);
       setUserProfile(null);
@@ -137,8 +133,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  /* -------------------- FIX: RECOVER WHEN TAB RESUMES -------------------- */
-
+  /* -------------------- TAB RESUME RECOVERY -------------------- */
   useEffect(() => {
     const onVisible = async () => {
       if (document.visibilityState === "visible") {
@@ -162,13 +157,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   /* -------------------- AUTH STATE LISTENER -------------------- */
-
   useEffect(() => {
     initializeAuth();
 
-    const {
-      data: { subscription }
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setLoading(true);
       setSession(session);
       setUser(session?.user ?? null);
@@ -187,7 +179,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   /* -------------------- ACTIONS -------------------- */
-
   const refreshProfile = async () => {
     if (!user?.id) return;
     await appCache.remove(`profile_${user.id}`);
@@ -211,7 +202,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   /* -------------------- PROVIDER -------------------- */
-
   return (
     <AuthContext.Provider
       value={{
