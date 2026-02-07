@@ -1,7 +1,7 @@
 // pages/admin/support/SupportTickets.tsx
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { adminSupportService, SupportTicket } from '../../../services/adminSupport'
+import { adminSupportService, SupportTicket } from '../../services/adminSupport'
 
 const SupportTickets: React.FC = () => {
   const [tickets, setTickets] = useState<SupportTicket[]>([])
@@ -268,5 +268,6 @@ const SupportTickets: React.FC = () => {
     </div>
   )
 }
+
 
 export default SupportTickets
