@@ -89,7 +89,8 @@ const Home: React.FC = () => {
     [userProfile]
   );
 
-  const getUserInitials = useCallback((firstName?: string, lastName?: string, fullName?: string): string => {
+  // FIXED: Memoize expensive callback
+  const getUserInitials = useMemo(() => (firstName?: string, lastName?: string, fullName?: string): string => {
     if (firstName && lastName) {
       return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
     }
@@ -107,7 +108,8 @@ const Home: React.FC = () => {
     navigate(`/profile/${userId}`);
   }, [navigate]);
 
-  const formatTimeAgo = useCallback((dateString: string): string => {
+  // FIXED: Memoize format function
+  const formatTimeAgo = useMemo(() => (dateString: string): string => {
     return homeService.formatTimeAgo(dateString);
   }, []);
 
@@ -144,6 +146,26 @@ const Home: React.FC = () => {
     }
     videoInputRef.current?.click();
   }, [userProfile]);
+
+  // FIXED: Memoize video ref callbacks to prevent re-renders
+  const videoRefCallbacks = useMemo(() => {
+    const callbacks: { [key: string]: (el: HTMLVideoElement | null) => void } = {};
+    
+    return {
+      getCallback: (postId: string) => {
+        if (!callbacks[postId]) {
+          callbacks[postId] = (el: HTMLVideoElement | null) => {
+            if (el) {
+              videoRefs.current[postId] = el;
+            } else {
+              delete videoRefs.current[postId];
+            }
+          };
+        }
+        return callbacks[postId];
+      }
+    };
+  }, []);
 
   if (loading && posts.length === 0) {
     return (
@@ -304,6 +326,19 @@ const Home: React.FC = () => {
                 post.author_name
               );
               
+              // FIXED: Memoize callbacks for this specific post
+              const handleThisVideoClick = useCallback(() => {
+                playingVideo === post.id ? {} : handleVideoPlay(post.id);
+              }, [playingVideo, post.id, handleVideoPlay]);
+
+              const handleThisVideoEnded = useCallback(() => {
+                handleVideoEnded(post.id);
+              }, [post.id, handleVideoEnded]);
+
+              const handleThisVideoLoaded = useCallback(() => {
+                handleVideoLoaded(post.id);
+              }, [post.id, handleVideoLoaded]);
+
               return (
                 <div key={post.id} className="bg-white rounded-xl shadow border border-blue-200 overflow-hidden">
                   {/* Post Header */}
@@ -401,20 +436,20 @@ const Home: React.FC = () => {
                         {post.media_type === 'video' ? (
                           <div className="relative">
                             <video
-                              ref={el => videoRefs.current[post.id] = el}
+                              ref={videoRefCallbacks.getCallback(post.id)}
                               src={post.media_urls[0]}
                               className="w-full h-auto max-h-[320px] object-contain bg-black" 
                               controls={playingVideo === post.id}
-                              onClick={() => playingVideo === post.id ? {} : handleVideoPlay(post.id)}
-                              onEnded={() => handleVideoEnded(post.id)}
-                              onLoadedData={() => handleVideoLoaded(post.id)}
+                              onClick={handleThisVideoClick}
+                              onEnded={handleThisVideoEnded}
+                              onLoadedData={handleThisVideoLoaded}
                               playsInline
                               preload="metadata"
                               aria-label="Post video"
                             />
                             {playingVideo !== post.id && (
                               <button
-                                onClick={() => handleVideoPlay(post.id)}
+                                onClick={handleThisVideoClick}
                                 className="absolute inset-0 flex items-center justify-center bg-black/20 group hover:bg-black/30 transition-colors min-h-[36px]"
                                 aria-label="Play video"
                               >
