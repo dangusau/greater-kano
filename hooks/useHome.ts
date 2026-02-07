@@ -33,7 +33,7 @@ export const useHome = () => {
   const postModalRef = useRef<HTMLDivElement>(null);
   const actionQueue = useRef(new ActionQueue());
 
-  // SIMPLE LOAD POSTS FUNCTION
+  // FIXED: Remove posts from dependencies to prevent infinite loop
   const loadPosts = useCallback(async (isForceRefresh = false) => {
     // Don't load if no user
     if (!userProfile?.id) {
@@ -44,10 +44,11 @@ export const useHome = () => {
     try {
       setLoading(true);
       
+      // FIXED: Pass empty array instead of current posts
       const { posts: loadedPosts, hasMore: loadedHasMore } = await homeService.loadPosts(
-        posts,
+        [],
         isForceRefresh,
-        true // Always check cache
+        true
       );
 
       setPosts(loadedPosts);
@@ -59,7 +60,7 @@ export const useHome = () => {
     } finally {
       setLoading(false);
     }
-  }, [userProfile?.id, posts]);
+  }, [userProfile?.id]); // FIXED: Removed posts dependency
 
   // Load posts when userProfile changes
   useEffect(() => {
@@ -73,13 +74,16 @@ export const useHome = () => {
     }
   }, [userProfile?.id, loadPosts]);
 
+  // FIXED: Remove posts from dependencies
   const loadMorePosts = useCallback(async () => {
     if (loadingMore || !userProfile?.id) return;
 
     setLoadingMore(true);
 
     try {
-      const { posts: loadedPosts, hasMore: loadedHasMore } = await homeService.loadMorePosts(posts);
+      // Use current posts via closure, not dependency
+      const currentPosts = posts;
+      const { posts: loadedPosts, hasMore: loadedHasMore } = await homeService.loadMorePosts(currentPosts);
       setPosts(loadedPosts);
       setHasMore(loadedHasMore);
     } catch (err) {
@@ -88,7 +92,7 @@ export const useHome = () => {
     } finally {
       setLoadingMore(false);
     }
-  }, [loadingMore, posts, userProfile?.id]);
+  }, [loadingMore, userProfile?.id]); // FIXED: Removed posts dependency
 
   const handleRefreshPosts = useCallback(async () => {
     if (!userProfile?.id) {
@@ -147,6 +151,7 @@ export const useHome = () => {
     setSelectedFiles(prev => prev.filter((_, i) => i !== index));
   }, []);
 
+  // FIXED: Use functional update to avoid posts dependency
   const handleLike = useCallback(async (postId: string) => {
     if (!userProfile?.id) {
       toast.error('Please login to like posts');
@@ -154,17 +159,34 @@ export const useHome = () => {
     }
 
     return actionQueue.current.execute(`like_${postId}`, async () => {
-      const { posts: updatedPosts, error } = await homeService.handleLike(postId, posts, userProfile);
+      // First update UI optimistically
+      setPosts(currentPosts => {
+        return currentPosts.map(post => {
+          if (post.id === postId) {
+            const newHasLiked = !post.has_liked;
+            return {
+              ...post,
+              has_liked: newHasLiked,
+              likes_count: newHasLiked ? post.likes_count + 1 : Math.max(0, post.likes_count - 1)
+            };
+          }
+          return post;
+        });
+      });
+
+      // Then make API call
+      const currentPosts = posts;
+      const { error } = await homeService.handleLike(postId, currentPosts, userProfile);
       
       if (error) {
         toast.error(error);
-        return;
+        // Revert optimistic update on error
+        setPosts(currentPosts); // Revert to original
       }
-      
-      setPosts(updatedPosts);
     });
-  }, [posts, userProfile]);
+  }, [userProfile]);
 
+  // FIXED: Use functional update to avoid posts dependency
   const handleShare = useCallback(async (postId: string) => {
     if (!userProfile?.id) {
       toast.error('Please login to share posts');
@@ -172,30 +194,45 @@ export const useHome = () => {
     }
 
     return actionQueue.current.execute(`share_${postId}`, async () => {
-      const { posts: updatedPosts, error, success, shareableLink } = await homeService.handleShare(postId, posts, userProfile);
+      // First update UI optimistically
+      setPosts(currentPosts => {
+        return currentPosts.map(post => {
+          if (post.id === postId) {
+            const newHasShared = !post.has_shared;
+            return {
+              ...post,
+              has_shared: newHasShared,
+              shares_count: newHasShared ? post.shares_count + 1 : Math.max(0, post.shares_count - 1)
+            };
+          }
+          return post;
+        });
+      });
+
+      // Then make API call
+      const currentPosts = posts;
+      const { error, success, shareableLink } = await homeService.handleShare(postId, currentPosts, userProfile);
       
       if (error) {
         toast.error(error);
+        // Revert optimistic update on error
+        setPosts(currentPosts); // Revert to original
         return;
       }
       
-      if (success) {
-        setPosts(updatedPosts);
-        
-        if (shareableLink) {
-          await handleNativeShare(postId, shareableLink);
-        } else {
-          toast.success(success);
-        }
-      } else {
-        setPosts(updatedPosts);
+      if (success && shareableLink) {
+        await handleNativeShare(postId, shareableLink);
+      } else if (success) {
+        toast.success(success);
       }
     });
-  }, [posts, userProfile]);
+  }, [userProfile]);
 
+  // FIXED: Add posts as dependency since we use it directly
   const handleNativeShare = useCallback(async (postId: string, shareableLink: string) => {
     try {
-      const post = posts.find(p => p.id === postId);
+      const currentPosts = posts;
+      const post = currentPosts.find(p => p.id === postId);
       if (!post) return;
       
       const shareData = {
@@ -220,7 +257,7 @@ export const useHome = () => {
       console.error('Error sharing:', error);
       toast.error('Failed to share post');
     }
-  }, [posts]);
+  }, [posts]); // Keep posts dependency since we use it directly
 
   const handleCopyLink = useCallback(async (link: string) => {
     try {
@@ -257,6 +294,7 @@ export const useHome = () => {
     }
   }, []);
 
+  // FIXED: Use functional update to avoid posts dependency
   const handleAddComment = useCallback(async (postId: string) => {
     if (!newComment.trim()) return;
     
@@ -266,27 +304,46 @@ export const useHome = () => {
     }
 
     return actionQueue.current.execute(`comment_${postId}`, async () => {
-      const { posts: updatedPosts, comments: loadedComments, error } = await homeService.handleAddComment(
+      const commentContent = newComment.trim();
+      
+      // First update UI optimistically
+      setPosts(currentPosts => {
+        return currentPosts.map(post => {
+          if (post.id === postId) {
+            return {
+              ...post,
+              comments_count: post.comments_count + 1
+            };
+          }
+          return post;
+        });
+      });
+
+      // Clear comment input immediately
+      setNewComment('');
+      
+      // Store the current posts for the API call
+      const currentPosts = posts;
+      const { error } = await homeService.handleAddComment(
         postId,
-        newComment.trim(),
-        posts,
+        commentContent,
+        currentPosts,
         userProfile
       );
       
       if (error) {
         toast.error(error);
+        // Revert optimistic update on error
+        setPosts(currentPosts);
+        setNewComment(commentContent); // Restore the comment text
         return;
       }
       
-      setPosts(updatedPosts);
-      setComments(prev => ({
-        ...prev,
-        [postId]: loadedComments
-      }));
-      setNewComment('');
+      // Load fresh comments
+      await loadComments(postId);
       toast.success('Comment added');
     });
-  }, [newComment, posts, userProfile]);
+  }, [newComment, userProfile, loadComments]);
 
   const handleCreatePost = useCallback(async () => {
     if (!userProfile?.id) {
