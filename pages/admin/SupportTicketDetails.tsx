@@ -1,7 +1,7 @@
 // pages/admin/support/SupportTicketDetails.tsx
 import React, { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { adminSupportService, SupportTicket, TicketReply } from '../../../services/adminSupport'
+import { adminSupportService, SupportTicket, TicketReply } from '../../services/adminSupport'
 
 type TicketWithReplies = SupportTicket & {
   replies: TicketReply[]
@@ -433,5 +433,6 @@ const SupportTicketDetails: React.FC = () => {
     </div>
   )
 }
+
 
 export default SupportTicketDetails
