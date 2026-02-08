@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Search, User, UserCheck, UserPlus, Store, AlertCircle } from 'lucide-react';
-import { supabase } from '../services/supabase/client';
+import { supabase } from '../services/supabase';
 import { messagingService } from '../services/supabase/messaging';
 import VerifiedBadge from '../components/VerifiedBadge';
 

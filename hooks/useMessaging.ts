@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { supabase } from '../services/supabase/client';
+import { supabase } from '../services/supabase';
 import { marketplaceService } from '../services/supabase/marketplace';
 import { MarketplaceMessage } from '../types/marketplace';
 

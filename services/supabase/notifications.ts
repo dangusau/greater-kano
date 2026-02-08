@@ -1,6 +1,6 @@
 // services/supabase/notificationService.ts
-import { supabase } from './client';
-import { Notification } from '../../types/notifications';
+import { supabase } from '../supabase';
+/*import { Notification } from '../../types/notifications';*/
 
 // Cache keys
 const CACHE_KEYS = {

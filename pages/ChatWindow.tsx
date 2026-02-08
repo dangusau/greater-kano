@@ -6,7 +6,7 @@ import {
   Check, CheckCheck, AlertCircle, Clock
 } from 'lucide-react';
 import { messagingService } from '../services/supabase/messaging';
-import { supabase } from '../services/supabase/client';
+import { supabase } from '../services/supabase';
 import { Message, MessageType } from '../types/messaging';
 import { formatTimeAgo } from '../utils/formatters';
 import VerifiedBadge from '../components/VerifiedBadge';

@@ -1,4 +1,4 @@
-import { supabase } from '../supabase/client';
+import { supabase } from '../supabase';
 import { Message, Conversation, PendingMessage, MessageType } from '../../types/messaging';
 
 // Cache keys

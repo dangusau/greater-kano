@@ -1,5 +1,5 @@
 // services/supabase/supportService.ts
-import { supabase } from './client';
+import { supabase } from '../supabase';
 
 // Cache keys
 const CACHE_KEYS = {

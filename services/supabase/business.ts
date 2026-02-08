@@ -1,5 +1,5 @@
 // Updated services/supabase/business.ts - Fixed RPC calls
-import { supabase } from './client';
+import { supabase } from '../supabase';
 import { storageService } from './storage';
 import { Business, BusinessFilters, UserVerificationStatus, Review } from '../../types/business';
 import { appCache } from '../../shared/services/UniversalCache';

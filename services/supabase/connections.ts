@@ -1,5 +1,5 @@
 // services/supabase/connections.ts
-import { supabase } from './client';
+import { supabase } from '../supabase';
 import { Member } from '../../types/index';
 
 export interface ConnectionRequest {

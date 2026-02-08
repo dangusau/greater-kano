@@ -1,4 +1,4 @@
-import { supabase } from './client';
+import { supabase } from '../supabase';
 import { storageService } from './storage';
 import { MarketplaceListing, MarketplaceMessage, Conversation, MarketplaceReview } from '../../types/marketplace';
 

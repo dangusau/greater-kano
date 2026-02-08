@@ -9,7 +9,7 @@ import {
 import { messagingService } from '../services/supabase/messaging';
 import { Conversation } from '../types/messaging';
 import { formatTimeAgo } from '../utils/formatters';
-import { supabase } from '../services/supabase/client';
+import { supabase } from '../services/supabase';
 import VerifiedBadge from '../components/VerifiedBadge';
 
 // Cache keys

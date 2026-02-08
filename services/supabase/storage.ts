@@ -1,4 +1,4 @@
-import { supabase } from './client';
+import { supabase } from '../supabase';
 
 export const storageService = {
   async uploadMarketplaceImages(files: File[], userId: string): Promise<string[]> {

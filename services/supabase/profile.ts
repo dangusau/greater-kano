@@ -1,5 +1,5 @@
 // services/supabase/profile.ts
-import { supabase } from './client';
+import { supabase } from '../supabase';
 
 const cacheService = {
   saveToCache(key: string, data: any): void {

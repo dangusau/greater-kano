@@ -4,13 +4,24 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js'
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string
 
+let supabaseInstanceCount = 0;
+
+if ((window as any).supabaseClient) {
+  console.warn('Supabase client already exists. Reusing it.');
+} else {
+  (window as any).supabaseClient = true;
+}
+
 export const supabase: SupabaseClient = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true
   }
-})
+});
+
+supabaseInstanceCount++;
+console.trace(`Supabase client created (#${supabaseInstanceCount}):`, supabaseUrl);
 
 // ========== TYPES ==========
 export interface UserProfile {

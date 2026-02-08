@@ -1,4 +1,4 @@
-import { supabase } from './client';
+import { supabase } from '../supabase';
 import { appCache } from '../../shared/services/UniversalCache';
 import { Job, Event, RSVPResult, JobFilters, EventFilters } from '../../types/explore';
 
