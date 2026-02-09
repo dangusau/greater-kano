@@ -7,6 +7,7 @@ import BottomNav from './components/BottomNav';
 import Sidebar from './components/Sidebar';
 
 // Pages
+import LandingPage from './pages/LandingPage';
 import Home from './pages/Home';
 import Members from './pages/Members';
 import Marketplace from './pages/Marketplace';
@@ -84,6 +85,7 @@ function App() {
         <AuthProvider>
           <Routes>
             {/* Public routes */}
+            <Route path="/" element={<LandingPage/>} />
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<SignUp />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
@@ -92,6 +94,7 @@ function App() {
             {/*Legal (Public & Required) */}
             <Route path="/terms" element={<Terms />} />
             <Route path="/privacy" element={<Privacy />} />
+             
 
             {/* Admin pages */}
             <Route path="/admin/dashboard" element={<AdminLayout><Dashboard /></AdminLayout>} />

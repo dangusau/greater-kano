@@ -123,3 +123,29 @@ main {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* GKBC Pioneers Slider */
+.pioneers-track {
+  display: flex;
+  gap: 2rem;
+  width: max-content;
+  animation: pioneers-slide 60s linear infinite;
+}
+
+.pioneers-track > * {
+  flex: none; /* ensures cards do not shrink */
+}
+
+@keyframes pioneers-slide {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%); /* move exactly half of duplicated track */
+  }
+}
+
+/* Optional: pause on hover */
+.pioneers-track:hover {
+  animation-play-state: paused;
+}

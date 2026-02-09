@@ -16,6 +16,7 @@
     "@capacitor/preferences": "^8.0.0",
     "@emoji-mart/data": "^1.2.1",
     "@emoji-mart/react": "^1.1.1",
+    "@heroicons/react": "^2.2.0",
     "@supabase/supabase-js": "^2.89.0",
     "audio-recorder-polyfill": "^0.4.1",
     "date-fns": "^4.1.0",
