@@ -5,6 +5,7 @@ import { useMarketplace } from '../hooks/useMarketplace';
 import { MarketplaceListing } from '../types/marketplace';
 import { formatTimeAgo } from '../utils/formatters';
 import { useAuth } from '../contexts/AuthContext';
+import { messagingService } from '../services/supabase/messaging';
 
 /**
  * ListingDetails Component with caching and optimized for all user types
@@ -166,52 +167,65 @@ const ListingDetails: React.FC = () => {
 
   // Contact Seller function - works for all authenticated users
   const handleContactSeller = async () => {
-    if (!listing || !user) {
-      alert('Please sign in to contact sellers');
-      navigate('/login');
-      return;
-    }
+  if (!listing || !user) {
+    alert('Please sign in to contact sellers');
+    navigate('/login');
+    return;
+  }
+  
+  if (listing.is_sold) {
+    alert('This item has been sold.');
+    return;
+  }
+  
+  if (listing.seller_id === user.id) {
+    alert('This is your own listing.');
+    return;
+  }
+  
+  try {
+    setSending(true);
     
-    if (listing.is_sold) {
-      alert('This item has been sold.');
-      return;
-    }
+    // 1. Get or create marketplace conversation
+    const conversationId = await messagingService.getOrCreateConversation(
+      listing.seller_id,
+      'marketplace'
+    );
     
-    if (listing.seller_id === user.id) {
-      alert('This is your own listing.');
-      return;
-    }
+    // 2. Prepare pre-filled message
+    const prefillMessage = `Hi, I'm interested in your listing "${listing.title}"`;
     
-    try {
-      setSending(true);
-      
-      // Create a message for the seller
-      const message = `Hi, I'm interested in your listing "${listing.title}" for ₦${listing.price.toLocaleString()}. Is this still available?`;
-      
-      // Navigate to messages with pre-filled message
-      navigate('/messages', {
-        state: {
-          recipientId: listing.seller_id,
-          recipientName: listing.seller_name,
-          prefillMessage: message,
-          listingId: listing.id,
-          listingTitle: listing.title
-        }
-      });
-      
-    } catch (error: any) {
-      console.error('Error contacting seller:', error);
-      
-      if (error.message?.includes('Not authenticated')) {
-        alert('Please login to contact sellers');
-        navigate('/login');
-      } else {
-        alert('Failed to contact seller. Please try again.');
+    // 3. Navigate to chat window
+    navigate(`/messages/${conversationId}`, {
+      state: {
+        otherUser: {
+          id: listing.seller_id,
+          name: listing.seller_name,
+          status: listing.seller_verified ? 'verified' : 'member'
+        },
+        context: 'marketplace',
+        listing: {
+          id: listing.id,
+          title: listing.title,
+          price: listing.price
+        },
+        prefillMessage: prefillMessage
       }
-    } finally {
-      setSending(false);
+    });
+    
+  } catch (error: any) {
+    console.error('Error contacting seller:', error);
+    
+    if (error.message?.includes('Not authenticated')) {
+      alert('Please login to contact sellers');
+      navigate('/login');
+    } else {
+      alert('Failed to contact seller. Please try again.');
     }
-  };
+  } finally {
+    setSending(false);
+  }
+};
 
   const handlePreviousImage = () => {
     if (listing && listing.images.length > 0) {

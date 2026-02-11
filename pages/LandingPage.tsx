@@ -270,7 +270,7 @@ function CallToAction() {
 
             <div className="flex items-center gap-2">
               <EnvelopeIcon className="h-6 w-6 text-white" />
-              <span>gkbc.100@hotmail.com</span>
+              <span>gkbc.1000@hotmail.com</span>
             </div>
           </div>
         </div>

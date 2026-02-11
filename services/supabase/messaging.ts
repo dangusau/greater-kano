@@ -1,471 +1,658 @@
 import { supabase } from '../supabase';
-import { Message, Conversation, PendingMessage, MessageType } from '../../types/messaging';
+import { 
+  Conversation, 
+  Message, 
+  MessageType, 
+  ConversationContext,
+  UnreadCounts,
+  ConnectionUser
+} from '../../types/messaging';
 
 // Cache keys
 const CACHE_KEYS = {
-  CONVERSATIONS: (context?: string) => `chat_conversations_${context || 'all'}`,
-  CONVERSATIONS_TIMESTAMP: (context?: string) => `chat_conversations_ts_${context || 'all'}`,
-  USER_STATUS: 'user_status_cache',
-  USER_STATUS_TIMESTAMP: 'user_status_timestamp',
+  CONVERSATIONS: (context?: ConversationContext | 'all') => `conversations_${context || 'all'}`,
+  CONVERSATIONS_TS: (context?: ConversationContext | 'all') => `conversations_ts_${context || 'all'}`,
   MESSAGES: (conversationId: string) => `messages_${conversationId}`,
-  MESSAGES_TIMESTAMP: (conversationId: string) => `messages_ts_${conversationId}`
+  MESSAGES_TS: (conversationId: string) => `messages_ts_${conversationId}`,
+  UNREAD_COUNTS: 'unread_counts',
+  UNREAD_COUNTS_TS: 'unread_counts_ts',
+  USER_STATUS: 'user_status',
+  USER_STATUS_TS: 'user_status_ts'
 };
 
-class MessagingService {
-  // Cache utility functions
-  private getFromCache<T>(key: string): T | null {
+// Cache TTL in minutes
+const CACHE_TTL = {
+  CONVERSATIONS: 2,
+  MESSAGES: 5,
+  UNREAD_COUNTS: 1,
+  USER_STATUS: 5
+};
+
+export class MessagingService {
+  private subscriptions = new Map<string, () => void>();
+
+  // ==================== CACHE METHODS ====================
+  
+  private getCache<T>(key: string): T | null {
     try {
-      const cached = localStorage.getItem(key);
-      if (!cached) return null;
-      
-      // Try to parse as JSON
-      try {
-        return JSON.parse(cached);
-      } catch (parseError) {
-        // If it's not valid JSON, it might be a plain string
-        console.warn(`Cache value for ${key} is not valid JSON, treating as plain string:`, cached);
-        // For backward compatibility, if it's a string status, return it
-        if (key === CACHE_KEYS.USER_STATUS && (cached === 'verified' || cached === 'member')) {
-          return cached as any;
-        }
-        return null;
-      }
-    } catch (error) {
-      console.error('Error reading from cache:', error);
+      const item = localStorage.getItem(key);
+      return item ? JSON.parse(item) : null;
+    } catch {
       return null;
     }
   }
 
-  private saveToCache(key: string, data: any): void {
+  private setCache(key: string, data: any): void {
     try {
-      // Always stringify the data, even if it's a simple string
-      const stringValue = JSON.stringify(data);
-      localStorage.setItem(key, stringValue);
+      localStorage.setItem(key, JSON.stringify(data));
     } catch (error) {
-      console.error('Error saving to cache:', error);
+      console.error('Cache set error:', error);
     }
   }
 
-  private isCacheValid(timestampKey: string, maxAgeMinutes: number = 2): boolean {
-    try {
-      const timestamp = localStorage.getItem(timestampKey);
-      if (!timestamp) return false;
-      
-      // Parse timestamp (might be stored as string or number)
-      let timestampValue: number;
-      try {
-        timestampValue = parseInt(timestamp);
-        if (isNaN(timestampValue)) {
-          // Try to parse as JSON if it's not a plain number
-          timestampValue = JSON.parse(timestamp);
-        }
-      } catch {
-        console.warn(`Invalid timestamp format for ${timestampKey}:`, timestamp);
-        return false;
+  private setCacheWithTimestamp(key: string, timestampKey: string, data: any): void {
+    this.setCache(key, data);
+    this.setCache(timestampKey, Date.now());
+  }
+
+  private isCacheValid(timestampKey: string, ttlMinutes: number): boolean {
+    const timestamp = this.getCache<number>(timestampKey);
+    if (!timestamp) return false;
+    return (Date.now() - timestamp) < ttlMinutes * 60 * 1000;
+  }
+
+  private clearCacheByPattern(pattern: string): void {
+    Object.keys(localStorage).forEach(key => {
+      if (key.includes(pattern)) {
+        localStorage.removeItem(key);
       }
-      
-      const cacheAge = Date.now() - timestampValue;
-      return cacheAge < maxAgeMinutes * 60 * 1000;
-    } catch (error) {
-      console.error('Error checking cache validity:', error);
-      return false;
-    }
+    });
   }
 
-  // Clear specific cache entries
-  private clearCacheItem(key: string): void {
-    try {
-      localStorage.removeItem(key);
-    } catch (error) {
-      console.error('Error clearing cache item:', error);
-    }
-  }
+  // ==================== USER STATUS METHODS ====================
 
-  // Get current user status with caching - UPDATED
+  /**
+   * Get current user's status with caching
+   */
   async getUserStatus(): Promise<'verified' | 'member'> {
     try {
-      // Check cache first
-      const cachedStatus = this.getFromCache<string>(CACHE_KEYS.USER_STATUS);
-      const isCacheValid = this.isCacheValid(CACHE_KEYS.USER_STATUS_TIMESTAMP, 5);
-      
-      if (cachedStatus && isCacheValid) {
-        return cachedStatus as 'verified' | 'member';
-      }
-      
-      // Get from database
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
-      
+
+      // Check cache first
+      const cached = this.getCache<'verified' | 'member'>(CACHE_KEYS.USER_STATUS);
+      if (cached && this.isCacheValid(CACHE_KEYS.USER_STATUS_TS, CACHE_TTL.USER_STATUS)) {
+        return cached;
+      }
+
+      // Fetch from database
       const { data, error } = await supabase
         .from('profiles')
         .select('user_status')
         .eq('id', user.id)
         .single();
-        
+
       if (error) throw error;
-      
+
       const status = data.user_status as 'verified' | 'member';
       
-      // Cache the result - using saveToCache which handles JSON.stringify
-      this.saveToCache(CACHE_KEYS.USER_STATUS, status);
-      localStorage.setItem(CACHE_KEYS.USER_STATUS_TIMESTAMP, Date.now().toString());
+      // Cache result
+      this.setCacheWithTimestamp(CACHE_KEYS.USER_STATUS, CACHE_KEYS.USER_STATUS_TS, status);
       
       return status;
+
     } catch (error) {
       console.error('Error getting user status:', error);
       return 'member'; // Default to member on error
     }
   }
 
-  // Fix any existing bad cache data
-  private fixBadCacheData(): void {
+  /**
+   * Get other user's status
+   */
+  private async getOtherUserStatus(otherUserId: string): Promise<'verified' | 'member'> {
     try {
-      // Check and fix user status cache if it's malformed
-      const userStatusRaw = localStorage.getItem(CACHE_KEYS.USER_STATUS);
-      if (userStatusRaw && (userStatusRaw === 'verified' || userStatusRaw === 'member')) {
-        console.log('Fixing malformed user status cache');
-        this.saveToCache(CACHE_KEYS.USER_STATUS, userStatusRaw);
-      }
-      
-      // Check and fix timestamps
-      const timestampKeys = [
-        CACHE_KEYS.USER_STATUS_TIMESTAMP,
-        CACHE_KEYS.CONVERSATIONS_TIMESTAMP('all'),
-        CACHE_KEYS.CONVERSATIONS_TIMESTAMP('connection'),
-        CACHE_KEYS.CONVERSATIONS_TIMESTAMP('marketplace')
-      ];
-      
-      timestampKeys.forEach(key => {
-        const timestamp = localStorage.getItem(key);
-        if (timestamp && isNaN(parseInt(timestamp))) {
-          console.log(`Fixing malformed timestamp for ${key}`);
-          localStorage.removeItem(key);
-        }
-      });
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('user_status')
+        .eq('id', otherUserId)
+        .single();
+
+      if (error) throw error;
+      return data.user_status as 'verified' | 'member';
     } catch (error) {
-      console.error('Error fixing cache data:', error);
+      console.error('Error getting other user status:', error);
+      return 'member';
     }
   }
 
-  // Initialize - call this once at app startup
-  initializeCache(): void {
-    this.fixBadCacheData();
+  /**
+   * Check if user can access connection conversations
+   */
+  async canAccessConnectionChats(): Promise<boolean> {
+    const status = await this.getUserStatus();
+    return status === 'verified';
   }
 
-  // Get conversations for the current user with user status filtering and caching
-  async getConversations(context?: 'connection' | 'marketplace'): Promise<Conversation[]> {
+  /**
+   * Get user's display name (combines first_name and last_name)
+   */
+  private getUserDisplayName(firstName?: string | null, lastName?: string | null): string {
+    if (firstName && lastName) {
+      return `${firstName} ${lastName}`.trim();
+    } else if (firstName) {
+      return firstName;
+    } else if (lastName) {
+      return lastName;
+    } else {
+      return 'User';
+    }
+  }
+
+  // ==================== CONVERSATION METHODS ====================
+
+  /**
+   * Get user's conversations with filtering by context
+   */
+  async getConversations(context?: ConversationContext): Promise<Conversation[]> {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        console.error('No authenticated user');
-        return [];
+      if (!user) return [];
+
+      const cacheKey = CACHE_KEYS.CONVERSATIONS(context || 'all');
+      const tsKey = CACHE_KEYS.CONVERSATIONS_TS(context || 'all');
+
+      // Check cache
+      const cached = this.getCache<Conversation[]>(cacheKey);
+      if (cached && this.isCacheValid(tsKey, CACHE_TTL.CONVERSATIONS)) {
+        return cached;
       }
 
-      // Check cache first
-      const cacheKey = CACHE_KEYS.CONVERSATIONS(context);
-      const timestampKey = CACHE_KEYS.CONVERSATIONS_TIMESTAMP(context);
-      
-      const cachedData = this.getFromCache<Conversation[]>(cacheKey);
-      const isCacheValid = this.isCacheValid(timestampKey, 2);
-      
-      if (cachedData && isCacheValid && Array.isArray(cachedData)) {
-        console.log('📦 Loading conversations from cache');
-        return this.filterConversationsByStatus(cachedData, context);
-      }
-
-      // Get user status first
-      const userStatus = await this.getUserStatus();
-      
-      // For member users, only show marketplace conversations
-      let actualContext = context;
-      if (userStatus === 'member') {
-        actualContext = 'marketplace';
-      }
-
-      console.log('🔄 Fetching conversations from server:', {
-        userId: user.id,
-        context: actualContext,
-        userStatus
-      });
-
-      // Call the PostgreSQL function
+      // Fetch from database
       const { data, error } = await supabase.rpc('get_user_conversations', {
         p_user_id: user.id,
-        p_context: actualContext || null
+        p_context: context || null
       });
 
       if (error) {
-        console.error('❌ RPC Error details:', {
-          code: error.code,
-          message: error.message,
-          details: error.details,
-          hint: error.hint
-        });
-        
-        // Try to return cached data even if stale
-        if (cachedData && Array.isArray(cachedData)) {
-          console.log('⚠️  Using stale cache due to RPC error');
-          return this.filterConversationsByStatus(cachedData, context);
-        }
-        
-        throw error;
+        console.error('Error fetching conversations:', error);
+        return cached || [];
       }
-      
-      console.log('✅ Received conversations from server:', data?.length || 0);
-      
-      let filteredData: Conversation[] = data || [];
-      
-      // Filter conversations based on user status
-      filteredData = this.filterConversationsByStatus(filteredData, actualContext);
-      
-      // Save to cache
-      this.saveToCache(cacheKey, filteredData);
-      localStorage.setItem(timestampKey, Date.now().toString());
-      
-      console.log('✅ Final filtered conversations:', filteredData.length);
-      return filteredData;
+
+      // Transform to Conversation type
+      const conversations: Conversation[] = (data || []).map((item: any) => ({
+        id: item.conversation_id,
+        conversation_id: item.conversation_id,
+        other_user_id: item.other_user_id,
+        other_user_name: item.other_user_name,
+        other_user_avatar: item.other_user_avatar,
+        last_message: item.last_message,
+        last_message_at: item.last_message_at,
+        unread_count: item.unread_count,
+        context: item.context as ConversationContext,
+        listing_id: item.listing_id,
+        listing_title: item.listing_title
+      }));
+
+      // Cache results
+      this.setCacheWithTimestamp(cacheKey, tsKey, conversations);
+      return conversations;
+
     } catch (error) {
-      console.error('❌ Error fetching conversations:', error);
-      
-      // Return cached data if available, even if stale
-      const cacheKey = CACHE_KEYS.CONVERSATIONS(context);
-      const cachedData = this.getFromCache<Conversation[]>(cacheKey);
-      if (cachedData && Array.isArray(cachedData)) {
-        console.log('⚠️  Falling back to cached data');
-        return cachedData;
-      }
-      
+      console.error('Error in getConversations:', error);
       return [];
     }
   }
 
-  // Helper to filter conversations by user status
-  private filterConversationsByStatus(
-    conversations: Conversation[], 
-    context?: 'connection' | 'marketplace'
-  ): Conversation[] {
-    if (!Array.isArray(conversations)) {
-      console.warn('filterConversationsByStatus received non-array:', conversations);
-      return [];
-    }
-    
-    return conversations.filter(conv => {
-      // For marketplace context, all conversations are allowed
-      if (context === 'marketplace') {
-        return true;
-      }
-      
-      // For connection context, only show if other user is verified
-      if (context === 'connection') {
-        return conv.other_user_status === 'verified';
-      }
-      
-      // For 'all' context, show everything (filtering happens in component)
-      return true;
-    });
-  }
-
-  // Get or create a conversation with user status validation
+  /**
+   * Get or create a conversation with proper validation
+   */
   async getOrCreateConversation(
     otherUserId: string,
-    context: 'connection' | 'marketplace' = 'connection',
+    context: ConversationContext = 'marketplace',
     listingId?: string
   ): Promise<string> {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
-      console.log(`🔄 Getting/Creating conversation:`, {
-        user1: user.id,
-        user2: otherUserId,
-        context,
-        listingId
-      });
-
-      // Get current user status
-      const currentUserStatus = await this.getUserStatus();
-      
-      // Get other user status
-      const { data: otherUserData, error: otherUserError } = await supabase
-        .from('profiles')
-        .select('user_status')
-        .eq('id', otherUserId)
-        .single();
-        
-      if (otherUserError) {
-        console.error('Error fetching other user status:', otherUserError);
-        throw new Error('Could not find user');
-      }
-      
-      const otherUserStatus = otherUserData?.user_status as 'verified' | 'member';
-      
-      // Validate based on user status
+      // For connection context, validate BEFORE calling RPC
       if (context === 'connection') {
-        if (currentUserStatus !== 'verified' || otherUserStatus !== 'verified') {
-          throw new Error('Both users must be verified for connection chats');
+        const validation = await this.canStartConnectionChat(otherUserId);
+        if (!validation.canStart) {
+          throw new Error(validation.reason || 'Cannot start connection conversation');
         }
       }
-      
-      // For member users, they can only create marketplace conversations
-      if (currentUserStatus === 'member' && context !== 'marketplace') {
-        throw new Error('Member users can only create marketplace conversations');
-      }
 
-      // Call PostgreSQL function
+      // Call the PostgreSQL function - ONLY 3 PARAMETERS!
       const { data: conversationId, error } = await supabase.rpc('get_or_create_conversation', {
         p_user1_id: user.id,
         p_user2_id: otherUserId,
-        p_context: context,
-        p_listing_id: listingId || null
+        p_context: context
+        // NO p_listing_id parameter!
       });
 
       if (error) {
-        console.error('❌ RPC Error:', error);
-        
-        // Handle unique constraint violation
-        if (error.code === '23505') {
-          console.log('🔄 Constraint violation, finding existing conversation...');
-          const conversations = await this.getConversations();
-          const existingConv = conversations.find(
-            conv => conv.other_user_id === otherUserId && conv.context === context
-          );
-          
-          if (existingConv) {
-            console.log(`✅ Found existing conversation: ${existingConv.conversation_id}`);
-            return existingConv.conversation_id;
-          }
-        }
+        console.error('Error creating conversation:', error);
         throw error;
       }
 
-      console.log(`✅ Conversation ID: ${conversationId}`);
-      
-      // Clear conversations cache since we have a new conversation
-      this.clearConversationsCache();
+      // Clear conversations cache
+      this.clearCacheByPattern('conversations_');
       
       return conversationId;
-      
-    } catch (error: any) {
-      console.error('❌ Error in getOrCreateConversation:', error);
+
+    } catch (error) {
+      console.error('Error in getOrCreateConversation:', error);
       throw error;
     }
   }
 
-  // Get messages for a conversation with caching
-  async getMessages(conversationId: string, limit: number = 50, offset: number = 0): Promise<Message[]> {
+  // ==================== MESSAGE METHODS ====================
+
+  /**
+   * Get messages for a conversation
+   */
+  async getConversationMessages(
+    conversationId: string, 
+    limit: number = 50, 
+    offset: number = 0
+  ): Promise<Message[]> {
     try {
-      // Try to load from cache first
       const cacheKey = CACHE_KEYS.MESSAGES(conversationId);
-      const timestampKey = CACHE_KEYS.MESSAGES_TIMESTAMP(conversationId);
-      
-      const cachedData = this.getFromCache<Message[]>(cacheKey);
-      const isCacheValid = this.isCacheValid(timestampKey, 2);
-      
-      if (cachedData && isCacheValid && Array.isArray(cachedData)) {
-        console.log('📦 Loading messages from cache for conversation:', conversationId);
-        // Mark as read in background
-        setTimeout(() => this.markMessagesAsRead(conversationId), 100);
-        return cachedData.slice(offset, offset + limit);
+      const tsKey = CACHE_KEYS.MESSAGES_TS(conversationId);
+
+      // Check cache
+      const cached = this.getCache<Message[]>(cacheKey);
+      if (cached && this.isCacheValid(tsKey, CACHE_TTL.MESSAGES)) {
+        const start = offset;
+        const end = offset + limit;
+        return cached.slice(start, end);
       }
-      
-      // Load from database
-      const { data, error } = await supabase
-        .from('messages')
-        .select('*')
-        .eq('conversation_id', conversationId)
-        .order('created_at', { ascending: true })
-        .range(offset, offset + limit - 1);
 
-      if (error) throw error;
+      // Fetch from database
+      const { data, error } = await supabase.rpc('get_conversation_messages', {
+        p_conversation_id: conversationId,
+        p_limit: limit,
+        p_offset: offset
+      });
 
-      const messages = data || [];
-      
-      // Cache the result
-      this.saveToCache(cacheKey, messages);
-      localStorage.setItem(timestampKey, Date.now().toString());
+      if (error) {
+        console.error('Error fetching messages:', error);
+        return [];
+      }
 
-      // Mark messages as read
-      await this.markMessagesAsRead(conversationId);
+      // Transform to Message type
+      const messages: Message[] = (data || []).map((item: any) => ({
+        id: item.id,
+        conversation_id: conversationId,
+        sender_id: item.sender_id,
+        sender_name: item.sender_name,
+        sender_avatar: item.sender_avatar,
+        type: item.type as MessageType,
+        content: item.content,
+        listing_id: item.listing_id,
+        listing_title: item.listing_title,
+        media_url: item.media_url,
+        is_read: item.is_read,
+        created_at: item.created_at
+      }));
 
-      console.log('🔄 Loaded messages from server for conversation:', conversationId, messages.length);
+      // Cache results
+      this.setCacheWithTimestamp(cacheKey, tsKey, messages);
+
+      // Mark as read in background
+      this.markMessagesAsRead(conversationId).catch(console.error);
+
       return messages;
+
     } catch (error) {
-      console.error('Error fetching messages:', error);
-      // Return cached data if available
-      const cacheKey = CACHE_KEYS.MESSAGES(conversationId);
-      const cachedData = this.getFromCache<Message[]>(cacheKey);
-      return (cachedData && Array.isArray(cachedData)) ? cachedData : [];
+      console.error('Error in getConversationMessages:', error);
+      return [];
     }
   }
 
-  // Send a message
+  /**
+   * Send a message
+   */
   async sendMessage(
     conversationId: string,
     content: string,
     type: MessageType = 'text',
+    listingId?: string,
     mediaFile?: File
   ): Promise<string> {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
-      let mediaUrl: string | null = null;
+      let mediaUrl: string | undefined;
 
       // Upload media if provided
       if (mediaFile) {
         mediaUrl = await this.uploadMedia(conversationId, mediaFile);
       }
 
-      // Insert message
-      const { data, error } = await supabase
-        .from('messages')
-        .insert({
-          conversation_id: conversationId,
-          sender_id: user.id,
-          type,
-          content: type === 'text' ? content : null,
-          media_url: mediaUrl
-        })
-        .select('id')
-        .single();
+      // Call the PostgreSQL function
+      const { data: messageId, error } = await supabase.rpc('send_message', {
+        p_conversation_id: conversationId,
+        p_sender_id: user.id,
+        p_content: content,
+        p_type: type,
+        p_listing_id: listingId || null
+      });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Error sending message:', error);
+        throw error;
+      }
 
-      // Update conversation's last_message_at
-      await supabase
-        .from('conversations')
-        .update({ last_message_at: new Date().toISOString() })
-        .eq('id', conversationId);
+      // Clear caches
+      this.clearCacheByPattern('conversations_');
+      this.clearCacheByPattern(`messages_${conversationId}`);
+      localStorage.removeItem(CACHE_KEYS.UNREAD_COUNTS);
+      localStorage.removeItem(CACHE_KEYS.UNREAD_COUNTS_TS);
 
-      // Clear cache for this conversation's messages
-      this.clearCacheItem(CACHE_KEYS.MESSAGES(conversationId));
-      this.clearCacheItem(CACHE_KEYS.MESSAGES_TIMESTAMP(conversationId));
-      
-      // Clear conversations cache
-      this.clearConversationsCache();
+      return messageId;
 
-      return data.id;
     } catch (error) {
-      console.error('Error sending message:', error);
+      console.error('Error in sendMessage:', error);
       throw error;
     }
   }
 
-  // Upload media file (Public method now for external use)
+  /**
+   * Send pre-filled marketplace message
+   */
+  async sendMarketplaceMessage(
+    conversationId: string,
+    listingId: string,
+    listingTitle: string
+  ): Promise<string> {
+    // First check if we've already messaged about this listing
+    const hasMessaged = await this.hasMessagedAboutListing(conversationId, listingId);
+    
+    if (hasMessaged) {
+      // If already messaged, just send a generic message
+      return this.sendMessage(
+        conversationId,
+        "Hi, I had a question about your listing",
+        'text',
+        listingId
+      );
+    } else {
+      // First message about this listing - send pre-filled message
+      const content = `Hi, I'm interested in your listing "${listingTitle}". Is it still available?`;
+      
+      return this.sendMessage(
+        conversationId,
+        content,
+        'text',
+        listingId
+      );
+    }
+  }
+
+  /**
+   * Check if user has messaged about a listing
+   */
+  async hasMessagedAboutListing(conversationId: string, listingId: string): Promise<boolean> {
+    try {
+      const messages = await this.getConversationMessages(conversationId, 20);
+      return messages.some(msg => msg.listing_id === listingId);
+    } catch (error) {
+      console.error('Error checking listing messages:', error);
+      return false;
+    }
+  }
+
+  // ==================== CONNECTION VALIDATION METHODS ====================
+
+  /**
+   * Check if two users are connected (check both directions)
+   */
+  async areUsersConnected(userId1: string, userId2: string): Promise<boolean> {
+    try {
+      const { data, error } = await supabase
+        .from('connections')
+        .select('status')
+        .or(`and(user_id.eq.${userId1},connected_user_id.eq.${userId2}),and(user_id.eq.${userId2},connected_user_id.eq.${userId1})`)
+        .eq('status', 'connected')
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        console.error('Error checking connection:', error);
+      }
+
+      return !!data;
+    } catch (error) {
+      console.error('Error in areUsersConnected:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Check if user can start a connection conversation
+   */
+  async canStartConnectionChat(otherUserId: string): Promise<{
+    canStart: boolean;
+    reason?: string;
+  }> {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        return { canStart: false, reason: 'Not authenticated' };
+      }
+
+      // 1. Check if current user is verified
+      const currentUserStatus = await this.getUserStatus();
+      if (currentUserStatus !== 'verified') {
+        return { 
+          canStart: false, 
+          reason: 'You must be verified to start connection conversations' 
+        };
+      }
+
+      // 2. Check if other user is verified
+      const otherUserStatus = await this.getOtherUserStatus(otherUserId);
+      if (otherUserStatus !== 'verified') {
+        return { 
+          canStart: false, 
+          reason: 'User must be verified for connection conversations' 
+        };
+      }
+
+      // 3. Check if users are connected
+      const areConnected = await this.areUsersConnected(user.id, otherUserId);
+      if (!areConnected) {
+        return { 
+          canStart: false, 
+          reason: 'You must be connected with this user to start a conversation' 
+        };
+      }
+
+      return { canStart: true };
+    } catch (error) {
+      console.error('Error checking connection chat:', error);
+      return { 
+        canStart: false, 
+        reason: 'Unable to verify connection status' 
+      };
+    }
+  }
+
+  /**
+   * Get connected verified users for /messages/new page
+   */
+  async getConnectedVerifiedUsers(): Promise<ConnectionUser[]> {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return [];
+
+      const userStatus = await this.getUserStatus();
+      if (userStatus !== 'verified') {
+        return [];
+      }
+
+      // Get connections where current user is either user_id OR connected_user_id
+      const { data: connections, error } = await supabase
+        .from('connections')
+        .select(`
+          user_id,
+          connected_user_id,
+          status,
+          user:profiles!connections_user_id_fkey (
+            id,
+            first_name,
+            last_name,
+            avatar_url,
+            user_status
+          ),
+          connected_user:profiles!connections_connected_user_id_fkey (
+            id,
+            first_name,
+            last_name,
+            avatar_url,
+            user_status
+          )
+        `)
+        .eq('status', 'connected')
+        .or(`user_id.eq.${user.id},connected_user_id.eq.${user.id}`);
+
+      if (error) {
+        console.error('Error fetching connections:', error);
+        return [];
+      }
+
+      const connectedUsers: ConnectionUser[] = [];
+
+      connections?.forEach((conn: any) => {
+        let connectedUser;
+        
+        // If current user is user_id, get connected_user profile
+        if (conn.user_id === user.id && conn.connected_user?.user_status === 'verified') {
+          connectedUser = conn.connected_user;
+        }
+        // If current user is connected_user_id, get user profile  
+        else if (conn.connected_user_id === user.id && conn.user?.user_status === 'verified') {
+          connectedUser = conn.user;
+        }
+
+        if (connectedUser && connectedUser.id !== user.id) {
+          connectedUsers.push({
+            id: connectedUser.id,
+            username: this.getUserDisplayName(connectedUser.first_name, connectedUser.last_name),
+            avatar_url: connectedUser.avatar_url
+          });
+        }
+      });
+
+      return connectedUsers;
+    } catch (error) {
+      console.error('Error in getConnectedVerifiedUsers:', error);
+      return [];
+    }
+  }
+
+  // ==================== UTILITY METHODS ====================
+
+  /**
+   * Get total unread count (for backward compatibility)
+   */
+  async getTotalUnreadCount(): Promise<number> {
+    try {
+      const counts = await this.getUnreadCounts();
+      return counts.total;
+    } catch (error) {
+      console.error('Error getting total unread count:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Mark messages as read
+   */
+  async markMessagesAsRead(conversationId: string): Promise<void> {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      await supabase.rpc('mark_messages_as_read', {
+        p_conversation_id: conversationId,
+        p_user_id: user.id
+      });
+
+      // Clear caches
+      this.clearCacheByPattern('conversations_');
+      localStorage.removeItem(CACHE_KEYS.UNREAD_COUNTS);
+      localStorage.removeItem(CACHE_KEYS.UNREAD_COUNTS_TS);
+
+    } catch (error) {
+      console.error('Error marking messages as read:', error);
+    }
+  }
+
+  /**
+   * Get unread counts
+   */
+  async getUnreadCounts(): Promise<UnreadCounts> {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return { total: 0, marketplace: 0, connection: 0 };
+
+      const cacheKey = CACHE_KEYS.UNREAD_COUNTS;
+      const tsKey = CACHE_KEYS.UNREAD_COUNTS_TS;
+
+      // Check cache
+      const cached = this.getCache<UnreadCounts>(cacheKey);
+      if (cached && this.isCacheValid(tsKey, CACHE_TTL.UNREAD_COUNTS)) {
+        return cached;
+      }
+
+      // Fetch from database
+      const { data, error } = await supabase.rpc('get_unread_counts', {
+        p_user_id: user.id
+      });
+
+      if (error) {
+        console.error('Error fetching unread counts:', error);
+        return { total: 0, marketplace: 0, connection: 0 };
+      }
+
+      const counts = data?.[0] || { total_unread: 0, marketplace_unread: 0, connection_unread: 0 };
+      const result: UnreadCounts = {
+        total: counts.total_unread || 0,
+        marketplace: counts.marketplace_unread || 0,
+        connection: counts.connection_unread || 0
+      };
+
+      // Cache results
+      this.setCacheWithTimestamp(cacheKey, tsKey, result);
+      return result;
+
+    } catch (error) {
+      console.error('Error in getUnreadCounts:', error);
+      return { total: 0, marketplace: 0, connection: 0 };
+    }
+  }
+
+  /**
+   * Upload media file
+   */
   async uploadMedia(conversationId: string, file: File): Promise<string> {
     try {
       const fileExt = file.name.split('.').pop();
       const fileName = `${conversationId}/${Date.now()}.${fileExt}`;
       const filePath = `chat-media/${fileName}`;
 
-      // Compress image if it's an image
+      // Compress image if needed
       let processedFile = file;
       if (file.type.startsWith('image/')) {
         processedFile = await this.compressImage(file);
       }
 
-      // Upload to Supabase Storage
-      const { data, error } = await supabase.storage
+      // Upload to storage
+      const { error } = await supabase.storage
         .from('chat-media')
         .upload(filePath, processedFile, {
           cacheControl: '3600',
@@ -480,14 +667,14 @@ class MessagingService {
         .getPublicUrl(filePath);
 
       return publicUrl;
+
     } catch (error) {
       console.error('Error uploading media:', error);
       throw error;
     }
   }
 
-  // Compress image for mobile
-  private async compressImage(file: File, maxWidth: number = 1200, quality: number = 0.7): Promise<File> {
+  private async compressImage(file: File, maxWidth: number = 1200, quality: number = 0.8): Promise<File> {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.readAsDataURL(file);
@@ -500,7 +687,6 @@ class MessagingService {
           const canvas = document.createElement('canvas');
           const ctx = canvas.getContext('2d');
           
-          // Calculate new dimensions
           let width = img.width;
           let height = img.height;
           
@@ -512,7 +698,6 @@ class MessagingService {
           canvas.width = width;
           canvas.height = height;
           
-          // Draw and compress
           ctx?.drawImage(img, 0, 0, width, height);
           
           canvas.toBlob(
@@ -524,7 +709,7 @@ class MessagingService {
                 });
                 resolve(compressedFile);
               } else {
-                reject(new Error('Failed to compress image'));
+                reject(new Error('Compression failed'));
               }
             },
             'image/webp',
@@ -539,77 +724,12 @@ class MessagingService {
     });
   }
 
-  // Mark messages as read
-  async markMessagesAsRead(conversationId: string): Promise<void> {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+  // ==================== REAL-TIME SUBSCRIPTIONS ====================
 
-      await supabase.rpc('mark_messages_as_read', {
-        p_conversation_id: conversationId,
-        p_user_id: user.id
-      });
-      
-      // Clear conversations cache to update unread counts
-      this.clearConversationsCache();
-    } catch (error) {
-      console.error('Error marking messages as read:', error);
-    }
-  }
-
-  // Clear conversations cache
-  private clearConversationsCache(): void {
-    // Clear all conversation caches
-    const contexts = ['all', 'connection', 'marketplace'];
-    contexts.forEach(context => {
-      this.clearCacheItem(CACHE_KEYS.CONVERSATIONS(context));
-      this.clearCacheItem(CACHE_KEYS.CONVERSATIONS_TIMESTAMP(context));
-    });
-  }
-
-  // Check if already messaged about a listing
-  async hasMessagedAboutListing(conversationId: string, listingTitle: string): Promise<boolean> {
-    try {
-      const messages = await this.getMessages(conversationId, 20);
-      
-      // Check if any message mentions this listing
-      const listingKeywords = [
-        `"${listingTitle}"`,
-        'interested in your listing',
-        'is this still available',
-        listingTitle.toLowerCase()
-      ];
-      
-      return messages.some(msg => {
-        const content = msg.content?.toLowerCase() || '';
-        return listingKeywords.some(keyword => content.includes(keyword.toLowerCase()));
-      });
-    } catch (error) {
-      console.error('Error checking existing messages:', error);
-      return false;
-    }
-  }
-
-  // Clear all cache (useful for logout or debugging)
-  clearAllCache(): void {
-    try {
-      // Clear all cache keys
-      Object.keys(localStorage).forEach(key => {
-        if (key.startsWith('chat_') || 
-            key.startsWith('messages_') || 
-            key.startsWith('user_status')) {
-          localStorage.removeItem(key);
-        }
-      });
-    } catch (error) {
-      console.error('Error clearing all cache:', error);
-    }
-  }
-
-  // Subscribe to new messages in a specific conversation
-  subscribeToMessages(conversationId: string, callback: (message: Message) => void) {
-    console.log(`🔔 Setting up message subscription for conversation: ${conversationId}`);
-    
+  /**
+   * Subscribe to new messages in a conversation
+   */
+  subscribeToMessages(conversationId: string, callback: (message: Message) => void): () => void {
     const channel = supabase
       .channel(`messages:${conversationId}`)
       .on(
@@ -621,160 +741,95 @@ class MessagingService {
           filter: `conversation_id=eq.${conversationId}`
         },
         (payload) => {
-          console.log('📨 New message received in subscription:', payload.new.id);
+          const newMessage = payload.new as Message;
           
-          // Clear cache for this conversation
-          this.clearCacheItem(CACHE_KEYS.MESSAGES(conversationId));
-          this.clearCacheItem(CACHE_KEYS.MESSAGES_TIMESTAMP(conversationId));
-          
-          // Clear conversations cache
-          this.clearConversationsCache();
-          
-          callback(payload.new as Message);
+          // Clear caches
+          this.clearCacheByPattern(`messages_${conversationId}`);
+          this.clearCacheByPattern('conversations_');
+          localStorage.removeItem(CACHE_KEYS.UNREAD_COUNTS);
+          localStorage.removeItem(CACHE_KEYS.UNREAD_COUNTS_TS);
+
+          callback(newMessage);
         }
       )
-      .subscribe((status) => {
-        console.log(`📡 Message subscription status for ${conversationId}:`, status);
-      });
+      .subscribe();
 
-    return () => {
-      console.log(`🔕 Unsubscribing from messages for conversation: ${conversationId}`);
+    this.subscriptions.set(`messages:${conversationId}`, () => {
       supabase.removeChannel(channel);
-    };
-  }
-
-  // Subscribe to conversation updates
-  subscribeToConversations(callback: () => void): () => void {
-    console.log('🔔 Setting up conversation subscriptions...');
-    
-    let unsubscribe = () => {
-      console.log('🔕 Cleanup called before subscription was ready');
-    };
-    
-    let processedMessageIds = new Set<string>();
-    let processedConversationIds = new Set<string>();
-    
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) {
-        console.error('No user found for conversation subscription');
-        return;
-      }
-      
-      console.log(`📡 Subscribing to conversations for user: ${user.id}`);
-      
-      processedMessageIds.clear();
-      processedConversationIds.clear();
-      
-      const channel = supabase
-        .channel(`user-conversations:${user.id}`)
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'messages'
-          },
-          async (payload) => {
-            const messageId = payload.new.id;
-            
-            if (processedMessageIds.has(messageId)) {
-              return;
-            }
-            
-            processedMessageIds.add(messageId);
-            console.log('📨 New message detected in conversations:', messageId);
-            
-            if (payload.new && payload.new.conversation_id) {
-              const { data: conversation } = await supabase
-                .from('conversations')
-                .select('user1_id, user2_id')
-                .eq('id', payload.new.conversation_id)
-                .single();
-              
-              if (conversation && (conversation.user1_id === user.id || conversation.user2_id === user.id)) {
-                console.log('🔄 Triggering callback for new message');
-                
-                // Clear relevant caches
-                this.clearConversationsCache();
-                this.clearCacheItem(CACHE_KEYS.MESSAGES(payload.new.conversation_id));
-                this.clearCacheItem(CACHE_KEYS.MESSAGES_TIMESTAMP(payload.new.conversation_id));
-                
-                callback();
-              }
-            }
-          }
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'conversations'
-          },
-          (payload) => {
-            const conversationId = payload.new.id;
-            
-            if (processedConversationIds.has(conversationId)) {
-              return;
-            }
-            
-            processedConversationIds.add(conversationId);
-            
-            if (payload.new && (payload.new.user1_id === user.id || payload.new.user2_id === user.id)) {
-              console.log('🔄 Conversation updated:', conversationId);
-              
-              // Clear conversations cache
-              this.clearConversationsCache();
-              callback();
-            }
-          }
-        )
-        .subscribe((status) => {
-          console.log('📡 Conversation subscription status:', status);
-        });
-      
-      const cleanupInterval = setInterval(() => {
-        if (processedMessageIds.size > 1000) {
-          processedMessageIds.clear();
-        }
-        if (processedConversationIds.size > 100) {
-          processedConversationIds.clear();
-        }
-      }, 60000);
-      
-      unsubscribe = () => {
-        console.log('🔕 Unsubscribing from conversations');
-        clearInterval(cleanupInterval);
-        supabase.removeChannel(channel);
-      };
-    }).catch(error => {
-      console.error('Error setting up conversation subscription:', error);
     });
-    
+
     return () => {
-      unsubscribe();
+      const unsubscribe = this.subscriptions.get(`messages:${conversationId}`);
+      if (unsubscribe) {
+        unsubscribe();
+        this.subscriptions.delete(`messages:${conversationId}`);
+      }
     };
   }
 
-  // Get unread count across all conversations
-  async getTotalUnreadCount(): Promise<number> {
-    try {
-      const conversations = await this.getConversations();
-      return conversations.reduce((sum, conv) => sum + conv.unread_count, 0);
-    } catch (error) {
-      console.error('Error getting unread count:', error);
-      return 0;
-    }
+  /**
+   * Subscribe to conversation updates
+   */
+  async subscribeToConversations(callback: (conversation: Conversation) => void): Promise<() => void> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return () => {};
+
+    const channel = supabase
+      .channel(`user-conversations:${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'conversations',
+          filter: `user1_id=eq.${user.id},user2_id=eq.${user.id}`
+        },
+        (payload) => {
+          const conversation = payload.new as Conversation;
+          
+          // Clear caches
+          this.clearCacheByPattern('conversations_');
+          localStorage.removeItem(CACHE_KEYS.UNREAD_COUNTS);
+          localStorage.removeItem(CACHE_KEYS.UNREAD_COUNTS_TS);
+
+          callback(conversation);
+        }
+      )
+      .subscribe();
+
+    this.subscriptions.set(`conversations:${user.id}`, () => {
+      supabase.removeChannel(channel);
+    });
+
+    return () => {
+      const unsubscribe = this.subscriptions.get(`conversations:${user.id}`);
+      if (unsubscribe) {
+        unsubscribe();
+        this.subscriptions.delete(`conversations:${user.id}`);
+      }
+    };
   }
 
-  // Refresh conversations cache (for manual refresh)
-  async refreshConversationsCache(): Promise<void> {
-    this.clearConversationsCache();
-    await this.getConversations(); // This will refresh the cache
+  /**
+   * Clean up all subscriptions
+   */
+  cleanupSubscriptions(): void {
+    this.subscriptions.forEach(unsubscribe => unsubscribe());
+    this.subscriptions.clear();
+  }
+
+  /**
+   * Clear all messaging caches
+   */
+  clearAllCache(): void {
+    this.clearCacheByPattern('conversations_');
+    this.clearCacheByPattern('messages_');
+    localStorage.removeItem(CACHE_KEYS.UNREAD_COUNTS);
+    localStorage.removeItem(CACHE_KEYS.UNREAD_COUNTS_TS);
+    localStorage.removeItem(CACHE_KEYS.USER_STATUS);
+    localStorage.removeItem(CACHE_KEYS.USER_STATUS_TS);
   }
 }
 
+// Export singleton instance
 export const messagingService = new MessagingService();
-
-// Initialize cache when module loads
-messagingService.initializeCache();

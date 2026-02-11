@@ -3,11 +3,11 @@ import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, Send, Image as ImageIcon, Mic, MoreVertical,
   Paperclip, Camera, X, ShoppingBag, ExternalLink,
-  Check, CheckCheck, AlertCircle, Clock
+  Check, CheckCheck, AlertCircle, Clock, FileText, Video, Music
 } from 'lucide-react';
 import { messagingService } from '../services/supabase/messaging';
 import { supabase } from '../services/supabase';
-import { Message, MessageType } from '../types/messaging';
+import { Message, MessageType, ConversationContext } from '../types/messaging';
 import { formatTimeAgo } from '../utils/formatters';
 import VerifiedBadge from '../components/VerifiedBadge';
 
@@ -20,6 +20,129 @@ const CACHE_KEYS = {
 
 // Generate temporary ID for optimistic updates
 const generateTempId = () => `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+// File preview modal component
+const FilePreviewModal: React.FC<{
+  file: File;
+  onSend: () => void;
+  onCancel: () => void;
+  isUploading: boolean;
+}> = ({ file, onSend, onCancel, isUploading }) => {
+  const [previewUrl, setPreviewUrl] = useState<string>('');
+  
+  useEffect(() => {
+    if (file.type.startsWith('image/') || file.type.startsWith('video/')) {
+      const url = URL.createObjectURL(file);
+      setPreviewUrl(url);
+      
+      return () => {
+        URL.revokeObjectURL(url);
+      };
+    }
+  }, [file]);
+  
+  const getFileIcon = () => {
+    if (file.type.startsWith('image/')) return <ImageIcon className="w-12 h-12 text-blue-500" />;
+    if (file.type.startsWith('video/')) return <Video className="w-12 h-12 text-purple-500" />;
+    if (file.type.startsWith('audio/')) return <Music className="w-12 h-12 text-green-500" />;
+    return <FileText className="w-12 h-12 text-gray-500" />;
+  };
+  
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 z-60 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md overflow-hidden">
+        <div className="flex items-center justify-between p-4 border-b border-gray-200">
+          <h3 className="font-bold text-gray-900">Preview File</h3>
+          <button
+            onClick={onCancel}
+            className="p-2 hover:bg-gray-100 rounded-xl"
+            disabled={isUploading}
+          >
+            <X className="w-5 h-5 text-gray-600" />
+          </button>
+        </div>
+        
+        <div className="p-4">
+          <div className="flex items-center gap-4 mb-4">
+            <div className="flex-shrink-0">
+              {previewUrl && file.type.startsWith('image/') ? (
+                <div className="w-16 h-16 rounded-lg overflow-hidden bg-gray-100">
+                  <img
+                    src={previewUrl}
+                    alt="Preview"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              ) : (
+                <div className="w-16 h-16 rounded-lg bg-gray-100 flex items-center justify-center">
+                  {getFileIcon()}
+                </div>
+              )}
+            </div>
+            
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-gray-900 truncate">{file.name}</p>
+              <p className="text-sm text-gray-500">{formatFileSize(file.size)} • {file.type}</p>
+            </div>
+          </div>
+          
+          {previewUrl && file.type.startsWith('video/') && (
+            <div className="mb-4">
+              <video
+                src={previewUrl}
+                controls
+                className="w-full rounded-lg"
+              />
+            </div>
+          )}
+          
+          {previewUrl && file.type.startsWith('audio/') && (
+            <div className="mb-4">
+              <audio
+                src={previewUrl}
+                controls
+                className="w-full"
+              />
+            </div>
+          )}
+          
+          <div className="flex gap-2">
+            <button
+              onClick={onCancel}
+              disabled={isUploading}
+              className="flex-1 py-3 px-4 bg-gray-100 text-gray-700 font-medium rounded-xl hover:bg-gray-200 transition-colors disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={onSend}
+              disabled={isUploading}
+              className="flex-1 py-3 px-4 bg-gradient-to-r from-blue-600 to-blue-500 text-white font-medium rounded-xl hover:shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {isUploading ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <Send className="w-4 h-4" />
+                  Send File
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const ChatWindow: React.FC = () => {
   const { conversationId } = useParams<{ conversationId: string }>();
@@ -41,6 +164,9 @@ const ChatWindow: React.FC = () => {
   const [realtimeConnected, setRealtimeConnected] = useState(false);
   const [pendingMessages, setPendingMessages] = useState<Set<string>>(new Set());
   const [failedMessages, setFailedMessages] = useState<Map<string, { message: string, retryCount: number }>>(new Map());
+  const [conversationContext, setConversationContext] = useState<ConversationContext>('connection');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [showFilePreview, setShowFilePreview] = useState(false);
   
   const otherUser = location.state?.otherUser || {
     id: '',
@@ -49,8 +175,14 @@ const ChatWindow: React.FC = () => {
     status: 'member'
   };
   
-  const context = location.state?.context || 'connection';
+  // Get context from location state or determine from conversation
+  const initialContext = location.state?.context as ConversationContext || 'connection';
   const listing = location.state?.listing || null;
+
+  // Sort messages in ascending order (oldest first, newest last)
+  const sortedMessages = [...messages].sort((a, b) => 
+    new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  );
 
   // Safety timeout to prevent infinite loading
   useEffect(() => {
@@ -106,10 +238,10 @@ const ChatWindow: React.FC = () => {
 
   // Scroll to bottom when messages change
   useEffect(() => {
-    if (messages.length > 0 && initialLoadComplete) {
+    if (sortedMessages.length > 0 && initialLoadComplete) {
       scrollToBottom();
     }
-  }, [messages, initialLoadComplete, scrollToBottom]);
+  }, [sortedMessages, initialLoadComplete, scrollToBottom]);
 
   // Check if user is near bottom before auto-scrolling
   const isNearBottom = useCallback(() => {
@@ -135,6 +267,10 @@ const ChatWindow: React.FC = () => {
       try {
         setLoading(true);
         
+        // Check if we should send pre-filled marketplace message
+        const shouldSendPrefilled = location.state?.sendPrefilledMessage || false;
+        const prefilledListing = location.state?.prefilledListing;
+        
         // Try to load from cache first
         const cacheKey = CACHE_KEYS.MESSAGES(conversationId);
         const timestampKey = CACHE_KEYS.MESSAGES_TIMESTAMP(conversationId);
@@ -149,7 +285,11 @@ const ChatWindow: React.FC = () => {
             try {
               const parsedMessages = JSON.parse(cachedMessages);
               if (isMounted && Array.isArray(parsedMessages)) {
-                setMessages(parsedMessages);
+                // Sort cached messages ascending
+                const sortedCachedMessages = parsedMessages.sort((a: Message, b: Message) => 
+                  new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+                );
+                setMessages(sortedCachedMessages);
                 setInitialLoadComplete(true);
                 scrollToBottom(true);
                 
@@ -168,18 +308,40 @@ const ChatWindow: React.FC = () => {
         setupRealtime();
         
         // Fetch fresh messages
-        const freshMessages = await messagingService.getMessages(conversationId);
+        const freshMessages = await messagingService.getConversationMessages(conversationId);
         
         if (isMounted) {
+          // Sort messages in ascending order
+          const sortedFreshMessages = freshMessages.sort((a, b) => 
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+          );
+          
           // Merge with cached messages (prefer fresh data)
-          setMessages(freshMessages);
+          setMessages(sortedFreshMessages);
           setLoading(false);
           setInitialLoadComplete(true);
+          
+          // Determine conversation context from messages
+          if (freshMessages.length > 0) {
+            // Check if any message has a listing_id (marketplace context)
+            const hasListingMessages = freshMessages.some(msg => msg.listing_id);
+            setConversationContext(hasListingMessages ? 'marketplace' : 'connection');
+          } else {
+            setConversationContext(initialContext);
+          }
+          
           scrollToBottom();
           
-          // Cache the fresh messages
+          // Send pre-filled marketplace message if needed
+          if (shouldSendPrefilled && prefilledListing && freshMessages.length === 0) {
+            setTimeout(() => {
+              sendPrefilledMarketplaceMessage(prefilledListing);
+            }, 500);
+          }
+          
+          // Cache the fresh messages (already sorted)
           try {
-            localStorage.setItem(cacheKey, JSON.stringify(freshMessages));
+            localStorage.setItem(cacheKey, JSON.stringify(sortedFreshMessages));
             localStorage.setItem(timestampKey, Date.now().toString());
           } catch (error) {
             console.error('Error caching messages:', error);
@@ -225,16 +387,16 @@ const ChatWindow: React.FC = () => {
               return;
             }
             
-          
-            
             if (isMounted) {
-              // Add the new message
+              // Add the new message (maintaining ascending order)
               setMessages(prev => {
                 // Check if message already exists (avoid duplicates)
                 const exists = prev.some(msg => msg.id === newMessage.id);
                 if (exists) return prev;
                 
-                const updated = [...prev, newMessage];
+                const updated = [...prev, newMessage].sort((a, b) => 
+                  new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+                );
                 
                 // Update cache
                 try {
@@ -252,6 +414,11 @@ const ChatWindow: React.FC = () => {
                 
                 return updated;
               });
+              
+              // Update context if this is a marketplace message
+              if (newMessage.listing_id) {
+                setConversationContext('marketplace');
+              }
               
               // Mark as read if it's not our message
               if (newMessage.sender_id !== currentUserId) {
@@ -283,6 +450,8 @@ const ChatWindow: React.FC = () => {
               setMessages(prev => 
                 prev.map(msg => 
                   msg.id === updatedMessage.id ? updatedMessage : msg
+                ).sort((a, b) => 
+                  new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
                 )
               );
             }
@@ -310,7 +479,32 @@ const ChatWindow: React.FC = () => {
         unsubscribe();
       }
     };
-  }, [conversationId, currentUserId, isNearBottom, scrollToBottom]);
+  }, [conversationId, currentUserId, isNearBottom, scrollToBottom, location.state]);
+
+  // Send pre-filled marketplace message
+  const sendPrefilledMarketplaceMessage = async (listingData: any) => {
+    if (!conversationId || !listingData) return;
+    
+    try {
+      const content = `Hi, I'm interested in your listing "${listingData.title}". Is it still available?`;
+      
+      await messagingService.sendMessage(
+        conversationId,
+        content,
+        'text',
+        listingData.id
+      );
+      
+      // Clear the prefilled flag from location state
+      navigate(location.pathname, {
+        replace: true,
+        state: { ...location.state, sendPrefilledMessage: false }
+      });
+      
+    } catch (error) {
+      console.error('Error sending pre-filled message:', error);
+    }
+  };
 
   // Optimistic send message
   const handleSendMessage = async (e: React.FormEvent) => {
@@ -320,14 +514,21 @@ const ChatWindow: React.FC = () => {
     const messageContent = newMessage.trim();
     const tempId = generateTempId();
     
+    // Determine if this is a marketplace message
+    const listingId = conversationContext === 'marketplace' && listing?.id ? listing.id : undefined;
+    
     // Create optimistic message
     const optimisticMessage: Message = {
       id: tempId,
       conversation_id: conversationId,
       sender_id: currentUserId,
+      sender_name: 'You',
+      sender_avatar: '',
       type: 'text',
       content: messageContent,
-      media_url: null,
+      listing_id: listingId,
+      listing_title: listing?.title,
+      media_url: undefined,
       is_read: false,
       created_at: new Date().toISOString()
     };
@@ -339,9 +540,11 @@ const ChatWindow: React.FC = () => {
       // Add to pending messages
       setPendingMessages(prev => new Set([...prev, tempId]));
       
-      // Add optimistic message immediately
+      // Add optimistic message immediately (maintaining order)
       setMessages(prev => {
-        const updated = [...prev, optimisticMessage];
+        const updated = [...prev, optimisticMessage].sort((a, b) => 
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
         
         // Update cache
         try {
@@ -359,8 +562,13 @@ const ChatWindow: React.FC = () => {
       // Scroll to show new message
       scrollToBottom();
       
-      // Send actual message
-      const messageId = await messagingService.sendMessage(conversationId, messageContent);
+      // Send actual message using new service
+      const messageId = await messagingService.sendMessage(
+        conversationId,
+        messageContent,
+        'text',
+        listingId
+      );
       
       console.log('✅ Message sent successfully:', messageId);
       
@@ -377,6 +585,8 @@ const ChatWindow: React.FC = () => {
           msg.id === tempId 
             ? { ...msg, id: messageId } 
             : msg
+        ).sort((a, b) => 
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
         )
       );
       
@@ -401,7 +611,9 @@ const ChatWindow: React.FC = () => {
       });
       
       // Remove optimistic message (will show retry UI)
-      setMessages(prev => prev.filter(msg => msg.id !== tempId));
+      setMessages(prev => prev.filter(msg => msg.id !== tempId).sort((a, b) => 
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      ));
       
       // Show error toast
       alert('Failed to send message. Please try again.');
@@ -410,61 +622,23 @@ const ChatWindow: React.FC = () => {
     }
   };
 
-  // Retry failed message
-  const handleRetryMessage = async (tempId: string, messageContent: string) => {
-    if (!conversationId) return;
-    
-    try {
-      // Remove from failed
-      setFailedMessages(prev => {
-        const next = new Map(prev);
-        next.delete(tempId);
-        return next;
-      });
-      
-      // Add back as optimistic
-      const optimisticMessage: Message = {
-        id: tempId,
-        conversation_id: conversationId,
-        sender_id: currentUserId,
-        type: 'text',
-        content: messageContent,
-        media_url: null,
-        is_read: false,
-        created_at: new Date().toISOString()
-      };
-      
-      setMessages(prev => [...prev, optimisticMessage]);
-      setPendingMessages(prev => new Set([...prev, tempId]));
-      
-      // Retry send
-      const messageId = await messagingService.sendMessage(conversationId, messageContent);
-      
-      // Update with real ID
-      setMessages(prev => 
-        prev.map(msg => 
-          msg.id === tempId 
-            ? { ...msg, id: messageId } 
-            : msg
-        )
-      );
-      
-      setPendingMessages(prev => {
-        const next = new Set(prev);
-        next.delete(tempId);
-        return next;
-      });
-      
-    } catch (error) {
-      console.error('❌ Retry failed:', error);
-      alert('Failed to resend message.');
+  // Handle file selection - show preview modal
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
+      setShowFilePreview(true);
+      setShowMediaOptions(false); // Close media options modal
     }
+    event.target.value = '';
   };
 
-  const handleMediaUpload = async (file: File) => {
-    if (!conversationId || uploading) return;
+  // Send media file after preview confirmation
+  const handleSendFile = async () => {
+    if (!selectedFile || !conversationId || uploading) return;
     
     const tempId = generateTempId();
+    const listingId = conversationContext === 'marketplace' && listing?.id ? listing.id : undefined;
     
     try {
       setUploading(true);
@@ -474,10 +648,14 @@ const ChatWindow: React.FC = () => {
         id: tempId,
         conversation_id: conversationId,
         sender_id: currentUserId,
-        type: file.type.startsWith('image/') ? 'image' : 
-              file.type.startsWith('video/') ? 'video' : 'audio',
-        content: file.name,
-        media_url: URL.createObjectURL(file), // Temp URL for preview
+        sender_name: 'You',
+        sender_avatar: '',
+        type: selectedFile.type.startsWith('image/') ? 'image' : 
+              selectedFile.type.startsWith('video/') ? 'video' : 'audio',
+        content: selectedFile.name,
+        listing_id: listingId,
+        listing_title: listing?.title,
+        media_url: URL.createObjectURL(selectedFile), // Temp URL for preview
         is_read: false,
         created_at: new Date().toISOString()
       };
@@ -485,16 +663,23 @@ const ChatWindow: React.FC = () => {
       // Add to pending
       setPendingMessages(prev => new Set([...prev, tempId]));
       
-      // Add optimistic message
-      setMessages(prev => [...prev, optimisticMessage]);
+      // Add optimistic message (maintaining order)
+      setMessages(prev => {
+        const updated = [...prev, optimisticMessage].sort((a, b) => 
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+        return updated;
+      });
+      
       scrollToBottom();
       
-      // Upload and send
+      // Upload and send using new service
       await messagingService.sendMessage(
         conversationId,
-        file.name,
-        optimisticMessage.type,
-        file
+        selectedFile.name,
+        optimisticMessage.type as MessageType,
+        listingId,
+        selectedFile
       );
       
       // Remove from pending
@@ -504,7 +689,9 @@ const ChatWindow: React.FC = () => {
         return next;
       });
       
-      setShowMediaOptions(false);
+      // Close preview modal and clear selected file
+      setShowFilePreview(false);
+      setSelectedFile(null);
       
     } catch (error) {
       console.error('Error uploading media:', error);
@@ -517,7 +704,13 @@ const ChatWindow: React.FC = () => {
       });
       
       // Remove optimistic message
-      setMessages(prev => prev.filter(msg => msg.id !== tempId));
+      setMessages(prev => prev.filter(msg => msg.id !== tempId).sort((a, b) => 
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      ));
+      
+      // Close preview modal
+      setShowFilePreview(false);
+      setSelectedFile(null);
       
       alert('Failed to upload media. Please try again.');
     } finally {
@@ -525,12 +718,10 @@ const ChatWindow: React.FC = () => {
     }
   };
 
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      handleMediaUpload(file);
-    }
-    event.target.value = '';
+  // Cancel file preview
+  const handleCancelFile = () => {
+    setShowFilePreview(false);
+    setSelectedFile(null);
   };
 
   const handleProfileClick = () => {
@@ -582,7 +773,7 @@ const ChatWindow: React.FC = () => {
                 onClick={() => navigate(-1)}
                 className="p-2 hover:bg-gray-100 rounded-xl transition-colors"
               >
-                <ArrowLeft className="w-5 h-5 text-gray-600" />
+                <ArrowLeft className="w-6 h-5 text-blue-600" />
               </button>
               
               <button
@@ -595,6 +786,16 @@ const ChatWindow: React.FC = () => {
                       src={otherUser.avatar}
                       alt={otherUser.name}
                       className="w-full h-full object-cover"
+                      onError={(e) => {
+                        // Fallback if image fails to load
+                        const target = e.target as HTMLImageElement;
+                        target.style.display = 'none';
+                        target.parentElement!.innerHTML = `
+                          <div class="w-full h-full flex items-center justify-center text-white font-bold text-lg">
+                            ${otherUser.name?.charAt(0).toUpperCase()}
+                          </div>
+                        `;
+                      }}
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-white font-bold text-lg">
@@ -617,7 +818,7 @@ const ChatWindow: React.FC = () => {
                   </div>
                   <div className="flex items-center gap-2">
                     <p className="text-xs text-gray-500 truncate">
-                      {context === 'marketplace' ? 'Product conversation' : 'Direct message'}
+                      {conversationContext === 'marketplace' ? 'Marketplace conversation' : ''}
                     </p>
                     <div className="flex items-center gap-1">
                       <div className={`w-2 h-2 rounded-full ${
@@ -633,7 +834,8 @@ const ChatWindow: React.FC = () => {
             </div>
             
             <div className="flex items-center gap-2">
-              {/* Connection status indicator */}
+            
+              {/* Member status indicator */}
               {currentUserStatus === 'member' && (
                 <span className="bg-amber-100 text-amber-700 text-xs px-2 py-1 rounded-full border border-amber-200">
                   Member
@@ -643,21 +845,14 @@ const ChatWindow: React.FC = () => {
           </div>
         </div>
         
-        {context === 'marketplace' && listing && (
+        {conversationContext === 'marketplace' && listing && (
           <div className="border-t border-gray-100 px-4 py-3 bg-gray-50">
             <div className="flex items-center justify-between">
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-gray-900 truncate text-sm">{listing.title}</p>
-                {listing.price && (
-                  <p className="text-green-600 font-bold text-sm">₦{listing.price}</p>
-                )}
+                
               </div>
-              <button
-                onClick={handleViewListing}
-                className="flex-shrink-0 ml-2 p-1 hover:bg-gray-200 rounded"
-              >
-                <ExternalLink className="w-4 h-4 text-gray-400" />
-              </button>
+
             </div>
           </div>
         )}
@@ -668,32 +863,34 @@ const ChatWindow: React.FC = () => {
         ref={messagesContainerRef}
         className="flex-1 overflow-y-auto p-4"
       >
-        {messages.length === 0 ? (
+        {sortedMessages.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center px-4">
             <div className="w-20 h-20 bg-gradient-to-br from-gray-100 to-gray-200 rounded-2xl flex items-center justify-center mb-4">
               <Send className="w-8 h-8 text-gray-400" />
             </div>
             <h3 className="text-lg font-bold text-gray-900 mb-2 text-center">No messages yet</h3>
             <p className="text-gray-600 text-center max-w-md">
-              {context === 'marketplace' 
-                ? `Start the conversation about ${listing?.title || 'this product'}`
+              {conversationContext === 'marketplace' && listing
+                ? `Start the conversation about ${listing.title}`
                 : 'Send a message to start the conversation'}
             </p>
-            {currentUserStatus === 'member' && context === 'connection' && (
+            
+            {/* Member restrictions warning */}
+            {currentUserStatus === 'member' && conversationContext === 'connection' && (
               <div className="mt-4 p-4 bg-gradient-to-r from-amber-50 to-amber-100 rounded-2xl border-2 border-amber-200 text-center max-w-md">
                 <div className="flex items-center justify-center gap-2 mb-2">
                   <AlertCircle className="w-5 h-5 text-amber-600" />
                   <p className="text-amber-700 font-medium">Member Account</p>
                 </div>
                 <p className="text-amber-600 text-sm">
-                  You're chatting with a verified member. Upgrade to verified status for full access to all features.
+                  You're chatting with a verified user. Upgrade to verified status for full access to all features.
                 </p>
               </div>
             )}
           </div>
         ) : (
           <div className="space-y-4">
-            {messages.map((message) => {
+            {sortedMessages.map((message) => {
               const isOwn = message.sender_id === currentUserId;
               const isPending = pendingMessages.has(message.id);
               const isTemp = message.id.startsWith('temp_');
@@ -735,27 +932,49 @@ const ChatWindow: React.FC = () => {
                         </div>
                       )}
                       
+                      {/* Show listing title for marketplace messages */}
+                      {message.listing_title && !isOwn && (
+                        <div className="mb-2 pb-2 border-b border-white/20">
+                          <p className="text-sm font-small opacity-90">Re: {message.listing_title}</p>
+                        </div>
+                      )}
+                      
                       {message.type === 'text' ? (
                         <p className="whitespace-pre-wrap">{message.content}</p>
                       ) : message.type === 'image' ? (
                         <div className="space-y-2">
-                          <img
-                            src={message.media_url!}
-                            alt="Shared image"
-                            className="rounded-lg max-w-full h-auto max-h-64 object-cover"
-                            loading="lazy"
-                          />
+                          <div className="rounded-lg overflow-hidden bg-gray-100">
+                            <img
+                              src={message.media_url!}
+                              alt="Shared image"
+                              className="max-w-full h-auto max-h-64 object-cover w-full"
+                              loading="lazy"
+                              onError={(e) => {
+                                // Fallback for broken images
+                                const target = e.target as HTMLImageElement;
+                                target.style.display = 'none';
+                                target.parentElement!.innerHTML = `
+                                  <div class="w-full h-64 flex flex-col items-center justify-center text-gray-500">
+                                    <ImageIcon class="w-12 h-12 mb-2" />
+                                    <p class="text-sm">Image failed to load</p>
+                                  </div>
+                                `;
+                              }}
+                            />
+                          </div>
                           {message.content && (
                             <p className="text-sm">{message.content}</p>
                           )}
                         </div>
                       ) : message.type === 'video' ? (
                         <div className="space-y-2">
-                          <video
-                            src={message.media_url!}
-                            controls
-                            className="rounded-lg max-w-full h-auto max-h-64"
-                          />
+                          <div className="rounded-lg overflow-hidden bg-gray-900">
+                            <video
+                              src={message.media_url!}
+                              controls
+                              className="max-w-full h-auto max-h-64 w-full"
+                            />
+                          </div>
                           {message.content && (
                             <p className="text-sm">{message.content}</p>
                           )}
@@ -775,8 +994,15 @@ const ChatWindow: React.FC = () => {
                     </div>
                     
                     <div className="flex items-center gap-2 mt-1 px-1">
+                      {/* Sender name for others' messages */}
+                      {!isOwn && message.sender_name && (
+                        <span className="text-xs font-small text-gray-800">
+                          {message.sender_name}
+                        </span>
+                      )}
+                      
                       {/* Timestamp */}
-                      <span className="text-xs text-gray-500 flex items-center gap-1">
+                      <span className="text-xs text-gray-800 flex items-center gap-1">
                         {isTemp ? (
                           <>
                             <Clock className="w-3 h-3" />
@@ -793,7 +1019,7 @@ const ChatWindow: React.FC = () => {
                           {message.is_read ? (
                             <CheckCheck className="w-3 h-3 text-blue-500" />
                           ) : (
-                            <Check className="w-3 h-3 text-gray-400" />
+                            <Check className="w-3 h-3 text-blue-400" />
                           )}
                         </span>
                       )}
@@ -810,7 +1036,7 @@ const ChatWindow: React.FC = () => {
       {/* Media Options Modal */}
       {showMediaOptions && (
         <div className="fixed inset-0 bg-black/50 z-60 flex items-end justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md p-4 mb-16"> {/* Add mb-16 here */}
+          <div className="bg-white rounded-2xl w-full max-w-md p-4 mb-16">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-gray-900">Share Media</h3>
               <button
@@ -854,6 +1080,16 @@ const ChatWindow: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* File Preview Modal */}
+      {showFilePreview && selectedFile && (
+        <FilePreviewModal
+          file={selectedFile}
+          onSend={handleSendFile}
+          onCancel={handleCancelFile}
+          isUploading={uploading}
+        />
       )}
 
       <input
@@ -915,7 +1151,7 @@ const ChatWindow: React.FC = () => {
                 type="button"
                 className="p-3 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-xl transition-colors"
               >
-                <Mic className="w-5 h-5" />
+                
               </button>
             )}
           </div>

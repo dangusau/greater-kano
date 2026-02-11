@@ -7,17 +7,23 @@ import {
   User, Clock, AlertCircle
 } from 'lucide-react';
 import { messagingService } from '../services/supabase/messaging';
-import { Conversation } from '../types/messaging';
+import { Conversation, ConversationContext } from '../types/messaging';
 import { formatTimeAgo } from '../utils/formatters';
 import { supabase } from '../services/supabase';
 import VerifiedBadge from '../components/VerifiedBadge';
 
 // Cache keys
 const CACHE_KEYS = {
-  CONVERSATIONS: 'chat_conversations_cache',
-  LAST_UPDATED: 'chat_conversations_last_updated',
-  USER_STATUS: 'user_status_cache'
+  CONVERSATIONS: (context?: ConversationContext | 'all') => `conversations_${context || 'all'}`,
+  CONVERSATIONS_TS: (context?: ConversationContext | 'all') => `conversations_ts_${context || 'all'}`,
+  USER_STATUS: 'user_status_cache',
+  USER_STATUS_TS: 'user_status_timestamp'
 };
+
+// Extend Conversation type locally to include other_user_status
+interface ConversationWithUserStatus extends Conversation {
+  other_user_status?: 'verified' | 'member';
+}
 
 /**
  * ConversationsList Component with Caching and User Status Restrictions
@@ -26,8 +32,8 @@ const ConversationsList: React.FC = () => {
   const navigate = useNavigate();
   
   // State management
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [filteredConversations, setFilteredConversations] = useState<Conversation[]>([]);
+  const [conversations, setConversations] = useState<ConversationWithUserStatus[]>([]);
+  const [filteredConversations, setFilteredConversations] = useState<ConversationWithUserStatus[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
   const [backgroundLoading, setBackgroundLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -39,45 +45,74 @@ const ConversationsList: React.FC = () => {
   const [isCheckingStatus, setIsCheckingStatus] = useState(true);
   
   // Refs for state management
-  const conversationsRef = useRef<Conversation[]>([]);
+  const conversationsRef = useRef<ConversationWithUserStatus[]>([]);
   const isMounted = useRef(true);
   const realtimeCleanupRef = useRef<() => void>(() => {});
   const safetyTimeoutRef = useRef<NodeJS.Timeout>();
 
   /**
-   * Get current user status
+   * Get current user status - USING MESSAGING SERVICE
    */
   const getUserStatus = async (): Promise<'verified' | 'member'> => {
+    return await messagingService.getUserStatus();
+  };
+
+  /**
+   * Get other user's status from profiles table
+   */
+  const getOtherUserStatus = async (userId: string): Promise<'verified' | 'member'> => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
-      
       const { data, error } = await supabase
         .from('profiles')
         .select('user_status')
-        .eq('id', user.id)
+        .eq('id', userId)
         .single();
-        
-      if (error) throw error;
+
+      if (error) {
+        console.error('Error getting other user status:', error);
+        return 'member';
+      }
       
       return data.user_status as 'verified' | 'member';
     } catch (error) {
-      console.error('Error getting user status:', error);
+      console.error('Error getting other user status:', error);
       return 'member';
     }
   };
 
   /**
+   * Enhance conversations with user statuses
+   */
+  const enhanceConversationsWithUserStatus = async (
+    conversations: Conversation[]
+  ): Promise<ConversationWithUserStatus[]> => {
+    const enhancedConversations: ConversationWithUserStatus[] = [];
+    
+    for (const conv of conversations) {
+      const userStatus = await getOtherUserStatus(conv.other_user_id);
+      enhancedConversations.push({
+        ...conv,
+        other_user_status: userStatus
+      });
+    }
+    
+    return enhancedConversations;
+  };
+
+  /**
    * Load conversations from cache
    */
-  const loadFromCache = (): Conversation[] | null => {
+  const loadFromCache = (context?: ConversationContext | 'all'): ConversationWithUserStatus[] | null => {
     try {
-      const cached = localStorage.getItem(CACHE_KEYS.CONVERSATIONS);
-      const cachedTimestamp = localStorage.getItem(CACHE_KEYS.LAST_UPDATED);
+      const cacheKey = CACHE_KEYS.CONVERSATIONS(context || 'all');
+      const timestampKey = CACHE_KEYS.CONVERSATIONS_TS(context || 'all');
+      
+      const cached = localStorage.getItem(cacheKey);
+      const cachedTimestamp = localStorage.getItem(timestampKey);
       
       if (cached && cachedTimestamp) {
         const cacheAge = Date.now() - parseInt(cachedTimestamp);
-        if (cacheAge < 2 * 60 * 1000) {
+        if (cacheAge < 2 * 60 * 1000) { // 2 minutes
           return JSON.parse(cached);
         }
       }
@@ -90,10 +125,13 @@ const ConversationsList: React.FC = () => {
   /**
    * Save conversations to cache
    */
-  const saveToCache = (data: Conversation[]) => {
+  const saveToCache = (data: ConversationWithUserStatus[], context?: ConversationContext | 'all') => {
     try {
-      localStorage.setItem(CACHE_KEYS.CONVERSATIONS, JSON.stringify(data));
-      localStorage.setItem(CACHE_KEYS.LAST_UPDATED, Date.now().toString());
+      const cacheKey = CACHE_KEYS.CONVERSATIONS(context || 'all');
+      const timestampKey = CACHE_KEYS.CONVERSATIONS_TS(context || 'all');
+      
+      localStorage.setItem(cacheKey, JSON.stringify(data));
+      localStorage.setItem(timestampKey, Date.now().toString());
     } catch (error) {
       console.error('Error saving to cache:', error);
     }
@@ -107,8 +145,8 @@ const ConversationsList: React.FC = () => {
     
     const initialize = async () => {
       try {
-        // Get user status
-        const status = await getUserStatus();
+        // Get user status using messaging service
+        const status = await messagingService.getUserStatus();
         if (!isMounted.current) return;
         
         setUserStatus(status);
@@ -179,6 +217,11 @@ const ConversationsList: React.FC = () => {
         return false;
       }
       
+      // For friends tab, only show verified user conversations
+      if (activeTab === 'friends' && conv.other_user_status !== 'verified') {
+        return false;
+      }
+      
       return matchesTab && matchesSearch;
     });
     
@@ -186,22 +229,64 @@ const ConversationsList: React.FC = () => {
   }, [conversations, searchQuery, activeTab, userStatus]);
 
   /**
-   * Load conversations from server
+   * Load conversations from server - WITH DEBUG LOGS
    */
   const loadConversationsFromServer = async (status: 'verified' | 'member', silent: boolean = false) => {
+    console.log('🔍 DEBUG: loadConversationsFromServer called', {
+      status,
+      silent,
+      activeTab,
+      userStatus
+    });
+    
     if (!silent) {
       setBackgroundLoading(true);
     }
     
     try {
-      // For member users, only load marketplace conversations
-      const context = status === 'member' ? 'marketplace' : undefined;
+      // Determine context based on user status and active tab
+      let context: ConversationContext | undefined;
+      
+      if (status === 'member') {
+        // Members can only see marketplace conversations
+        context = 'marketplace';
+        console.log('🔍 DEBUG: Member user, context forced to marketplace');
+      } else if (activeTab === 'marketplace') {
+        context = 'marketplace';
+        console.log('🔍 DEBUG: Marketplace tab active, context: marketplace');
+      } else if (activeTab === 'friends') {
+        context = 'connection';
+        console.log('🔍 DEBUG: Friends tab active, context: connection');
+      } else {
+        console.log('🔍 DEBUG: All tab active, context: undefined (get all)');
+      }
+      // For 'all' tab, context is undefined (gets all conversations)
+      
+      console.log('🔍 DEBUG: Calling messagingService.getConversations with context:', context);
       const data = await messagingService.getConversations(context);
       
+      console.log('🔍 DEBUG: Service returned:', {
+        dataLength: data?.length || 0,
+        data: data
+      });
+      
+      if (!data || data.length === 0) {
+        console.log('🔍 DEBUG: No conversations returned, checking if this is expected');
+        console.log('🔍 DEBUG: User ID from auth:', (await supabase.auth.getUser()).data.user?.id);
+      }
+      
+      // Enhance conversations with user status
+      const enhancedData = await enhanceConversationsWithUserStatus(data);
+      
+      console.log('🔍 DEBUG: Enhanced data:', {
+        enhancedLength: enhancedData?.length || 0,
+        enhancedData
+      });
+
       if (isMounted.current) {
         // Check for new unread messages
         const oldUnreadTotal = conversationsRef.current.reduce((sum, conv) => sum + conv.unread_count, 0);
-        const newUnreadTotal = data.reduce((sum, conv) => sum + conv.unread_count, 0);
+        const newUnreadTotal = enhancedData.reduce((sum, conv) => sum + conv.unread_count, 0);
         
         // Show notification indicator for new messages
         if (newUnreadTotal > oldUnreadTotal) {
@@ -211,11 +296,13 @@ const ConversationsList: React.FC = () => {
         
         // Update conversations state
         setConversations(prev => {
-          if (JSON.stringify(prev) !== JSON.stringify(data)) {
-            conversationsRef.current = data;
-            saveToCache(data);
-            return data;
+          if (JSON.stringify(prev) !== JSON.stringify(enhancedData)) {
+            conversationsRef.current = enhancedData;
+            saveToCache(enhancedData, context || 'all');
+            console.log('🔍 DEBUG: Conversations state updated, new count:', enhancedData.length);
+            return enhancedData;
           }
+          console.log('🔍 DEBUG: No change in conversations data');
           return prev;
         });
         
@@ -227,7 +314,7 @@ const ConversationsList: React.FC = () => {
         }
       }
     } catch (error) {
-      console.error('Error refreshing conversations:', error);
+      console.error('❌ ERROR in loadConversationsFromServer:', error);
     } finally {
       if (isMounted.current && !silent) {
         setBackgroundLoading(false);
@@ -235,6 +322,7 @@ const ConversationsList: React.FC = () => {
       if (isMounted.current && initialLoading) {
         setInitialLoading(false);
       }
+      console.log('🔍 DEBUG: loadConversationsFromServer completed');
     }
   };
 
@@ -246,17 +334,36 @@ const ConversationsList: React.FC = () => {
     
     setRealtimeStatus('connecting');
     
-    const cleanup = messagingService.subscribeToConversations(() => {
+    const unsubscribe = messagingService.subscribeToConversations((conversation) => {
       if (isMounted.current) {
         setRealtimeStatus('connected');
-        if (userStatus) {
-          loadConversationsFromServer(userStatus, true);
-        }
+        // Update specific conversation in state
+        setConversations(prev => {
+          const index = prev.findIndex(c => c.id === conversation.id);
+          if (index !== -1) {
+            const updated = [...prev];
+            // Get user status for updated conversation
+            getOtherUserStatus(conversation.other_user_id).then(status => {
+              updated[index] = {
+                ...conversation,
+                other_user_status: status
+              };
+              setConversations(updated);
+            });
+          }
+          return prev;
+        });
       }
     });
     
-    realtimeCleanupRef.current = cleanup;
+    // Store unsubscribe function
+    realtimeCleanupRef.current = () => {
+      if (unsubscribe) {
+        unsubscribe.then(fn => fn()).catch(console.error);
+      }
+    };
     
+    // Set timeout for connection status
     setTimeout(() => {
       if (isMounted.current && realtimeStatus === 'connecting') {
         setRealtimeStatus('disconnected');
@@ -268,42 +375,74 @@ const ConversationsList: React.FC = () => {
         }, 15000);
         
         realtimeCleanupRef.current = () => {
-          cleanup();
+          if (unsubscribe) {
+            unsubscribe.then(fn => fn()).catch(console.error);
+          }
           clearInterval(pollInterval);
         };
       }
     }, 3000);
     
-    return cleanup;
+    return realtimeCleanupRef.current;
   };
 
   /**
-   * Handle manual refresh
+   * Handle manual refresh - WITH DEBUG LOGS
    */
-  const handleManualRefresh = () => {
+  const handleManualRefresh = async () => {
+    console.log('🔄 DEBUG: Manual refresh triggered');
+    console.log('🔄 DEBUG: Current userStatus:', userStatus);
+    console.log('🔄 DEBUG: Current conversations in state:', conversations.length);
+    console.log('🔄 DEBUG: Current conversations ref:', conversationsRef.current.length);
+    
     if (userStatus) {
-      loadConversationsFromServer(userStatus, false);
+      // Clear cache first
+      console.log('🔄 DEBUG: Clearing cache');
+      messagingService.clearAllCache();
+      
+      // Also clear local cache
+      const contexts = ['all', 'marketplace', 'connection'];
+      contexts.forEach(context => {
+        localStorage.removeItem(CACHE_KEYS.CONVERSATIONS(context));
+        localStorage.removeItem(CACHE_KEYS.CONVERSATIONS_TS(context));
+      });
+      
+      // Force reload
+      await loadConversationsFromServer(userStatus, false);
+      
+      console.log('🔄 DEBUG: Refresh completed');
+    } else {
+      console.log('🔄 DEBUG: No user status, cannot refresh');
     }
   };
 
   /**
-   * Calculate unread counts
+   * Calculate unread counts - USING NEW MESSAGING SERVICE
    */
-  const totalUnread = useMemo(() => {
-    return conversations.reduce((sum, conv) => sum + conv.unread_count, 0);
-  }, [conversations]);
+  const [unreadCounts, setUnreadCounts] = useState({ total: 0, marketplace: 0, connection: 0 });
 
-  const friendsUnread = useMemo(() => {
-    return conversations
-      .filter(conv => conv.context === 'connection' && conv.other_user_status === 'verified')
-      .reduce((sum, conv) => sum + conv.unread_count, 0);
-  }, [conversations]);
+  useEffect(() => {
+    const loadUnreadCounts = async () => {
+      try {
+        const counts = await messagingService.getUnreadCounts();
+        console.log('🔍 DEBUG: Unread counts loaded:', counts);
+        setUnreadCounts(counts);
+      } catch (error) {
+        console.error('Error loading unread counts:', error);
+      }
+    };
 
-  const marketplaceUnread = useMemo(() => {
-    return conversations
-      .filter(conv => conv.context === 'marketplace')
-      .reduce((sum, conv) => sum + conv.unread_count, 0);
-  }, [conversations]);
+    if (userStatus) {
+      loadUnreadCounts();
+      // Refresh unread counts every 30 seconds
+      const interval = setInterval(loadUnreadCounts, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [userStatus]);
+
+  const totalUnread = useMemo(() => unreadCounts.total, [unreadCounts]);
+  const friendsUnread = useMemo(() => unreadCounts.connection, [unreadCounts]);
+  const marketplaceUnread = useMemo(() => unreadCounts.marketplace, [unreadCounts]);
 
   /**
    * Navigate to new conversation
@@ -340,7 +479,7 @@ const ConversationsList: React.FC = () => {
             Connect and chat with other verified members. Upgrade your account to access this feature.
           </p>
           <button
-            onClick={() => window.open('mailto:support@example.com', '_blank')}
+            onClick={() => window.open('mailto:gkbc.1000@gmail.com', '_blank')}
             className="inline-flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-medium px-6 py-3 rounded-xl hover:shadow-lg transition-all border border-blue-800"
           >
             Contact Support for Upgrade
@@ -424,36 +563,20 @@ const ConversationsList: React.FC = () => {
           </div>
           
           <div className="flex items-center gap-2">
-            {userStatus === 'verified' && (
-              <div className="flex items-center gap-1">
-                <div className={`w-2 h-2 rounded-full ${
-                  realtimeStatus === 'connected' ? 'bg-green-500' :
-                  realtimeStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' :
-                  'bg-red-500'
-                }`} />
-                <span className="text-xs text-gray-500 hidden sm:block">
-                  {realtimeStatus === 'connected' ? 'Connected' : 
-                   realtimeStatus === 'connecting' ? 'Connecting' : 'Offline'}
-                </span>
-              </div>
-            )}
+            
             
             <button
               onClick={handleManualRefresh}
               disabled={backgroundLoading}
               className="w-10 h-10 flex items-center justify-center bg-white border border-blue-200 rounded-xl hover:bg-blue-50 active:scale-95 transition-all disabled:opacity-50"
-              title="Refresh conversations"
+              title="Refresh conversations (with debug)"
             >
               <RefreshCw className={`w-5 h-5 text-blue-600 ${backgroundLoading ? 'animate-spin' : ''}`} />
             </button>
             
-            <button
-              onClick={handleStartNewConversation}
-              className="w-10 h-10 flex items-center justify-center bg-white border border-blue-200 rounded-xl hover:bg-blue-50 active:scale-95 transition-all"
-              title={userStatus === 'member' ? 'Browse Marketplace' : 'New conversation'}
-            >
-              <Plus className="w-5 h-5 text-blue-600" />
-            </button>
+            
+            
+           
           </div>
         </div>
         
@@ -501,7 +624,7 @@ const ConversationsList: React.FC = () => {
               }`}
             >
               <Users className="w-4 h-4" />
-              <span className="font-medium">Verified</span>
+              <span className="font-medium">Network</span>
               {friendsUnread > 0 && (
                 <span className="bg-red-100 text-red-600 text-xs font-medium px-1.5 py-0.5 rounded-full">
                   {friendsUnread}
@@ -519,7 +642,7 @@ const ConversationsList: React.FC = () => {
             }`}
           >
             <Store className="w-4 h-4" />
-            <span className="font-medium">Marketplace</span>
+            <span className="font-medium">Customers</span>
             {marketplaceUnread > 0 && (
               <span className="bg-red-100 text-red-600 text-xs font-medium px-1.5 py-0.5 rounded-full">
                 {marketplaceUnread}
@@ -581,8 +704,7 @@ const ConversationsList: React.FC = () => {
                     context: conversation.context,
                     listing: conversation.listing_id ? {
                       id: conversation.listing_id,
-                      title: conversation.listing_title,
-                      price: conversation.listing_price
+                      title: conversation.listing_title
                     } : null
                   }}
                   className="block bg-white rounded-2xl p-4 hover:shadow-lg transition-all duration-200 border border-blue-100 active:scale-[0.99]"
@@ -626,7 +748,7 @@ const ConversationsList: React.FC = () => {
                       {/* Unread Message Indicator */}
                       {conversation.unread_count > 0 && (
                         <span className="absolute -top-1 -right-1 bg-gradient-to-r from-red-500 to-red-600 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center shadow-sm">
-                          {conversation.unread_count}
+                          {conversation.unread_count > 9 ? '9+' : conversation.unread_count}
                         </span>
                       )}
                     </div>
@@ -648,9 +770,9 @@ const ConversationsList: React.FC = () => {
                           
                           {/* Context Badge */}
                           {conversation.context === 'marketplace' && (
-                            <span className="inline-flex items-center gap-1 bg-gradient-to-r from-orange-50 to-orange-100 text-orange-700 text-xs font-medium px-2 py-0.5 rounded-full border border-orange-200">
+                            <span className="inline-flex items-center gap-1 bg-gradient-to-r from-orange-50 to-orange-100 text-orange-700 text-xs font-small px-2 py-0.5 rounded-full border border-orange-200">
                               <ShoppingBag className="w-3 h-3" />
-                              <span>Product</span>
+                              <span>Customer</span>
                             </span>
                           )}
                         </div>
@@ -659,14 +781,9 @@ const ConversationsList: React.FC = () => {
                       {/* Second Row: Product Title */}
                       {conversation.context === 'marketplace' && conversation.listing_title && (
                         <div className="mb-2">
-                          <p className="text-sm text-gray-800 font-medium truncate">
+                          <p className="text-sm text-gray-800 font-small truncate">
                             {conversation.listing_title}
                           </p>
-                          {conversation.listing_price && (
-                            <p className="text-sm font-bold text-green-600">
-                              ₦{conversation.listing_price.toLocaleString()}
-                            </p>
-                          )}
                         </div>
                       )}
 
@@ -679,7 +796,7 @@ const ConversationsList: React.FC = () => {
                         {/* Read Status Indicators */}
                         <div className="flex items-center gap-1 flex-shrink-0">
                           {conversation.unread_count > 0 ? (
-                            <Check className="w-4 h-4 text-blue-500" />
+                            <Check className="w-3 h-3 text-blue-500" />
                           ) : conversation.last_message ? (
                             <CheckCheck className="w-4 h-4 text-gray-400" />
                           ) : null}

@@ -4,11 +4,7 @@ import { ArrowLeft, Search, User, UserCheck, UserPlus, Store, AlertCircle } from
 import { supabase } from '../services/supabase';
 import { messagingService } from '../services/supabase/messaging';
 import VerifiedBadge from '../components/VerifiedBadge';
-
-// Cache keys
-const CACHE_KEYS = {
-  USER_STATUS: 'user_status_cache_newconv'
-};
+import { ConnectionUser } from '../types/messaging';
 
 /**
  * Interface for User Profile data structure
@@ -20,7 +16,7 @@ interface UserProfile {
   avatar_url: string | null;
   user_status: 'verified' | 'member';
   is_connected: boolean;
-  connection_status?: 'pending' | 'accepted' | 'rejected';
+  connection_status?: 'pending' | 'connected' | 'rejected';
 }
 
 /**
@@ -38,6 +34,7 @@ const NewConversation: React.FC = () => {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserStatus, setCurrentUserStatus] = useState<'verified' | 'member' | null>(null);
   const [isCheckingStatus, setIsCheckingStatus] = useState(true);
+  const [searchResults, setSearchResults] = useState<UserProfile[]>([]);
 
   // Get current user ID and status on mount
   useEffect(() => {
@@ -46,43 +43,19 @@ const NewConversation: React.FC = () => {
       if (user?.id) {
         setCurrentUserId(user.id);
         
-        // Get user status with caching
-        const cachedStatus = localStorage.getItem(CACHE_KEYS.USER_STATUS);
-        const cachedTimestamp = localStorage.getItem(`${CACHE_KEYS.USER_STATUS}_timestamp`);
-        
-        if (cachedStatus && cachedTimestamp) {
-          const cacheAge = Date.now() - parseInt(cachedTimestamp);
-          if (cacheAge < 5 * 60 * 1000) {
-            setCurrentUserStatus(cachedStatus as 'verified' | 'member');
-            setIsCheckingStatus(false);
-            
-            // Load connections if verified
-            if (cachedStatus === 'verified') {
-              loadConnections(user.id);
-            }
-          }
-        }
-        
-        // Fetch fresh status
-        const { data } = await supabase
-          .from('profiles')
-          .select('user_status')
-          .eq('id', user.id)
-          .single();
-          
-        if (data) {
-          const status = data.user_status as 'verified' | 'member';
+        // Get user status from our new messaging service
+        try {
+          const status = await messagingService.getUserStatus();
           setCurrentUserStatus(status);
           setIsCheckingStatus(false);
           
-          // Cache the result
-          localStorage.setItem(CACHE_KEYS.USER_STATUS, status);
-          localStorage.setItem(`${CACHE_KEYS.USER_STATUS}_timestamp`, Date.now().toString());
-          
           // Load connections if verified
           if (status === 'verified') {
-            loadConnections(user.id);
+            loadConnections();
           }
+        } catch (error) {
+          console.error('Error getting user status:', error);
+          setIsCheckingStatus(false);
         }
       } else {
         setIsCheckingStatus(false);
@@ -91,85 +64,30 @@ const NewConversation: React.FC = () => {
     getCurrentUser();
   }, []);
 
-  // Load connections on mount and when currentUserId changes
-  const loadConnections = async (userId: string) => {
+  // Load connections using our new service
+  const loadConnections = async () => {
     try {
       setLoading(true);
       
-      // Get accepted connections where current user is either user_id or connected_user_id
-      const { data, error } = await supabase
-        .from('connections')
-        .select(`
-          id,
-          user_id,
-          connected_user_id,
-          status,
-          user:profiles!connections_user_id_fkey(
-            id,
-            first_name,
-            last_name,
-            avatar_url,
-            user_status
-          ),
-          connected_user:profiles!connections_connected_user_id_fkey(
-            id,
-            first_name,
-            last_name,
-            avatar_url,
-            user_status
-          )
-        `)
-        .eq('status', 'accepted')
-        .or(`user_id.eq.${userId},connected_user_id.eq.${userId}`);
-
-      if (error) throw error;
-
-      // Process connections to get user profiles
-      const connectionProfiles: UserProfile[] = [];
+      // Use our new messaging service to get connected verified users
+      const connectedUsers = await messagingService.getConnectedVerifiedUsers();
       
-      (data || []).forEach(conn => {
-        // Determine which profile is NOT the current user
-        if (conn.user_id === userId) {
-          // Current user initiated connection - show connected user
-          if (conn.connected_user && conn.connected_user.user_status === 'verified') {
-            connectionProfiles.push({
-              id: conn.connected_user.id,
-              first_name: conn.connected_user.first_name || '',
-              last_name: conn.connected_user.last_name || '',
-              avatar_url: conn.connected_user.avatar_url,
-              user_status: conn.connected_user.user_status as 'verified' | 'member',
-              is_connected: true,
-              connection_status: 'accepted'
-            });
-          }
-        } else {
-          // Current user received connection - show user who initiated
-          if (conn.user && conn.user.user_status === 'verified') {
-            connectionProfiles.push({
-              id: conn.user.id,
-              first_name: conn.user.first_name || '',
-              last_name: conn.user.last_name || '',
-              avatar_url: conn.user.avatar_url,
-              user_status: conn.user.user_status as 'verified' | 'member',
-              is_connected: true,
-              connection_status: 'accepted'
-            });
-          }
-        }
-      });
+      // Transform to UserProfile format
+      const connectionProfiles: UserProfile[] = connectedUsers.map(user => ({
+        id: user.id,
+        first_name: user.username.split(' ')[0] || '', // Extract first name
+        last_name: user.username.split(' ').slice(1).join(' ') || '', // Extract last name
+        avatar_url: user.avatar_url || null,
+        user_status: 'verified' as const,
+        is_connected: true,
+        connection_status: 'connected' as const
+      }));
 
-      // Remove duplicates and filter only verified users
-      const uniqueProfiles = connectionProfiles
-        .filter((profile, index, self) =>
-          index === self.findIndex(p => p.id === profile.id)
-        )
-        .filter(profile => profile.user_status === 'verified');
-
-      setConnections(uniqueProfiles);
+      setConnections(connectionProfiles);
       
       // Show connections by default in connections tab
       if (activeTab === 'connections') {
-        setUsers(uniqueProfiles);
+        setUsers(connectionProfiles);
       }
     } catch (error) {
       console.error('Error loading connections:', error);
@@ -186,6 +104,9 @@ const NewConversation: React.FC = () => {
       }, 300);
 
       return () => clearTimeout(debounceTimeout);
+    } else if (activeTab === 'discover' && !searchQuery.trim()) {
+      setSearchResults([]);
+      setUsers([]);
     }
   }, [searchQuery, activeTab, currentUserId, currentUserStatus]);
 
@@ -214,27 +135,17 @@ const NewConversation: React.FC = () => {
       const usersWithStatus = await Promise.all(
         (data || []).map(async (profile) => {
           try {
-            const { data: connection, error: connectionError } = await supabase
-              .from('connections')
-              .select('status, user_id, connected_user_id')
-              .or(
-                `and(user_id.eq.${currentUserId},connected_user_id.eq.${profile.id}),` +
-                `and(user_id.eq.${profile.id},connected_user_id.eq.${currentUserId})`
-              )
-              .single();
-
-            if (connectionError && connectionError.code !== 'PGRST116') {
-              console.error('Connection check error:', connectionError);
-            }
-
+            // Use our new service to check connection
+            const isConnected = await messagingService.areUsersConnected(currentUserId, profile.id);
+            
             return {
               id: profile.id,
               first_name: profile.first_name || '',
               last_name: profile.last_name || '',
               avatar_url: profile.avatar_url,
               user_status: profile.user_status as 'verified' | 'member',
-              is_connected: connection?.status === 'accepted',
-              connection_status: connection?.status
+              is_connected: isConnected,
+              connection_status: isConnected ? 'connected' : undefined
             };
           } catch (err) {
             console.error('Error checking connection status:', err);
@@ -253,6 +164,7 @@ const NewConversation: React.FC = () => {
 
       // Filter to show only verified users
       const verifiedUsers = usersWithStatus.filter(user => user.user_status === 'verified');
+      setSearchResults(verifiedUsers);
       setUsers(verifiedUsers);
     } catch (error) {
       console.error('Error searching users:', error);
@@ -269,7 +181,14 @@ const NewConversation: React.FC = () => {
       // Get the user profile for navigation state
       const userProfile = users.find(u => u.id === userId);
       
-      // Get or create conversation
+      // Validate connection chat using our new service
+      const validation = await messagingService.canStartConnectionChat(userId);
+      if (!validation.canStart) {
+        alert(validation.reason || 'Cannot start connection conversation');
+        return;
+      }
+
+      // Get or create connection conversation using our new service
       const conversationId = await messagingService.getOrCreateConversation(userId, 'connection');
       
       // Navigate to conversation
@@ -280,13 +199,14 @@ const NewConversation: React.FC = () => {
             name: `${userProfile?.first_name} ${userProfile?.last_name}`.trim(),
             avatar_url: userProfile?.avatar_url,
             status: userProfile?.user_status
-          }
+          },
+          context: 'connection'
         }
       });
     } catch (error: any) {
       console.error('Error starting conversation:', error);
-      if (error.message === 'Both users must be verified for connection chats') {
-        alert('You can only start conversations with verified users in this section.');
+      if (error.message?.includes('verified') || error.message?.includes('connected')) {
+        alert(error.message);
       } else {
         alert('Failed to start conversation. Please try again.');
       }
@@ -321,7 +241,7 @@ const NewConversation: React.FC = () => {
       if (activeTab === 'discover') {
         searchUsers();
       } else {
-        loadConnections(currentUserId);
+        loadConnections();
       }
     } catch (error: any) {
       console.error('Error sending connection request:', error);
@@ -359,7 +279,7 @@ const NewConversation: React.FC = () => {
       setUsers(connections);
       setSearchQuery('');
     } else {
-      setUsers([]);
+      setUsers(searchResults);
     }
   };
 
@@ -385,7 +305,7 @@ const NewConversation: React.FC = () => {
             Browse Marketplace
           </button>
           <button
-            onClick={() => window.open('mailto:support@example.com', '_blank')}
+            onClick={() => window.open('mailto:gkbc.1000@gmail.com', '_blank')}
             className="inline-flex items-center gap-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-medium px-6 py-3 rounded-xl hover:shadow-lg transition-all border border-blue-800"
           >
             Contact Support for Upgrade
@@ -454,7 +374,7 @@ const NewConversation: React.FC = () => {
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
-            <h1 className="text-xl font-bold text-gray-900">New Conversation</h1>
+            <h1 className="text-xl font-semibold text-gray-900">Start a Conversation</h1>
           </div>
         </div>
         
@@ -477,7 +397,7 @@ const NewConversation: React.FC = () => {
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold text-gray-900">New Conversation</h1>
+            <h1 className="text-xl font-semibold text-gray-900">Start a Conversation</h1>
             <span className="bg-gradient-to-r from-blue-500 to-blue-600 text-white text-xs font-medium px-2 py-1 rounded-full shadow-sm">
               Verified
             </span>
@@ -491,7 +411,7 @@ const NewConversation: React.FC = () => {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={activeTab === 'connections' ? "Search verified connections..." : "Search verified users..."}
+            placeholder={activeTab === 'connections' ? "Search verified members..." : "Search verified users..."}
             className="w-full pl-12 pr-4 py-3.5 bg-white rounded-xl border-2 border-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400 transition-all"
             disabled={currentUserStatus !== 'verified'}
           />
@@ -512,7 +432,7 @@ const NewConversation: React.FC = () => {
             disabled={currentUserStatus !== 'verified'}
           >
             <UserCheck className="w-4 h-4" />
-            <span className="font-medium">Verified Connections</span>
+            <span className="font-medium">Network</span>
             {connections.length > 0 && (
               <span className="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full font-medium">
                 {connections.length}
@@ -531,7 +451,7 @@ const NewConversation: React.FC = () => {
             disabled={currentUserStatus !== 'verified'}
           >
             <User className="w-4 h-4" />
-            <span className="font-medium">Discover Verified</span>
+            <span className="font-medium">Finder</span>
           </button>
         </div>
       </div>
