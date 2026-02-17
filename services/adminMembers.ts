@@ -79,32 +79,28 @@ export const adminMembersService = {
     }
 
     const accessToken = session.access_token
+    if (!accessToken) {
+      return { success: false, error: new Error('Access token missing') }
+    }
 
-    // Make the Edge Function request
-    const response = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/delete-member`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${accessToken}`,              // user's JWT
-          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,       // REQUIRED for Edge Functions
-        },
-        body: JSON.stringify({ userId: profileId }),
-      }
-    )
+    // Call Edge Function
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/delete-member`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`,
+        'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY, // required
+      },
+      body: JSON.stringify({ userId: profileId }),
+    })
 
-    // Parse JSON safely
     const result = await response.json().catch(async () => {
       const text = await response.text()
       throw new Error(`Server returned ${response.status}: ${text}`)
     })
 
     if (!response.ok) {
-      return {
-        success: false,
-        error: new Error(result.error || `Request failed with status ${response.status}`),
-      }
+      return { success: false, error: new Error(result.error || `Request failed with status ${response.status}`) }
     }
 
     return { success: true, error: null }
@@ -113,6 +109,7 @@ export const adminMembersService = {
     return { success: false, error: err }
   }
 },
+
 
   // --------------------------------------
   // Get verified members
@@ -148,4 +145,5 @@ export const adminMembersService = {
     }
   },
 }
+
 
