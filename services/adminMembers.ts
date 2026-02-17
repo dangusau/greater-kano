@@ -71,28 +71,16 @@ export const adminMembersService = {
 
  async deleteMember(profileId: string) {
   try {
-    // Get the current user session
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-
-    if (sessionError || !session) {
-      return { success: false, error: new Error('No active session') }
-    }
-
-    const accessToken = session.access_token
-    if (!accessToken) {
-      return { success: false, error: new Error('Access token missing') }
-    }
-
-    // Call Edge Function
-    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/delete-member`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${accessToken}`,
-        'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY, // required
-      },
-      body: JSON.stringify({ userId: profileId }),
-    })
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/delete-member`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ userId: profileId }),
+      }
+    )
 
     const result = await response.json().catch(async () => {
       const text = await response.text()
@@ -100,15 +88,20 @@ export const adminMembersService = {
     })
 
     if (!response.ok) {
-      return { success: false, error: new Error(result.error || `Request failed with status ${response.status}`) }
+      return {
+        success: false,
+        error: new Error(result.error || `Request failed with status ${response.status}`)
+      }
     }
 
     return { success: true, error: null }
+
   } catch (err) {
-    console.error('Unexpected error deleting member:', err)
+    console.error("Unexpected error deleting member:", err)
     return { success: false, error: err }
   }
 },
+
 
 
   // --------------------------------------
@@ -145,5 +138,6 @@ export const adminMembersService = {
     }
   },
 }
+
 
 
