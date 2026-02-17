@@ -71,34 +71,19 @@ export const adminMembersService = {
 
  async deleteMember(profileId: string) {
   try {
-    const response = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/delete-member`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ userId: profileId }),
-      }
-    )
+    const { error } = await supabase.rpc('admin_delete_user', {
+      target_user_id: profileId
+    });
 
-    const result = await response.json().catch(async () => {
-      const text = await response.text()
-      throw new Error(`Server returned ${response.status}: ${text}`)
-    })
-
-    if (!response.ok) {
-      return {
-        success: false,
-        error: new Error(result.error || `Request failed with status ${response.status}`)
-      }
+    if (error) {
+      console.error('Delete error:', error);
+      return { success: false, error };
     }
 
-    return { success: true, error: null }
-
+    return { success: true, error: null };
   } catch (err) {
-    console.error("Unexpected error deleting member:", err)
-    return { success: false, error: err }
+    console.error('Unexpected error:', err);
+    return { success: false, error: err };
   }
 },
 
@@ -138,6 +123,7 @@ export const adminMembersService = {
     }
   },
 }
+
 
 
 
