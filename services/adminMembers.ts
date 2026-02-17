@@ -1,5 +1,5 @@
-// services/adminMembers.ts
 import { supabase } from './supabase'
+import type { User } from '@supabase/supabase-js'
 
 export interface Member {
   id: string
@@ -13,26 +13,25 @@ export interface Member {
 }
 
 export const adminMembersService = {
+  // --------------------------------------
   // Fetch all members
+  // --------------------------------------
   async getMembers() {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, first_name, last_name, email, phone, user_status, created_at, updated_at')
+        .select('*')
         .order('created_at', { ascending: false })
 
-      if (error) {
-        console.error('Error fetching members:', error)
-        return { data: [], error }
-      }
-      return { data, error: null }
+      return { data: data ?? [], error }
     } catch (err) {
-      console.error('Unexpected error fetching members:', err)
       return { data: [], error: err }
     }
   },
 
-  // Verify a member (change user_status to 'verified')
+  // --------------------------------------
+  // Verify member
+  // --------------------------------------
   async verifyMember(memberId: string) {
     try {
       const { data, error } = await supabase
@@ -42,21 +41,17 @@ export const adminMembersService = {
           updated_at: new Date().toISOString(),
         })
         .eq('id', memberId)
-        .select('id, user_status, updated_at')
+        .select()
 
-      if (error) {
-        console.error('Error verifying member:', error)
-        return { data: null, error }
-      }
-      
-      return { data, error: null }
+      return { data: data?.[0] ?? null, error }
     } catch (err) {
-      console.error('Unexpected error verifying member:', err)
       return { data: null, error: err }
     }
   },
 
-  // Unverify a member (change user_status to 'member')
+  // --------------------------------------
+  // Unverify member
+  // --------------------------------------
   async unverifyMember(memberId: string) {
     try {
       const { data, error } = await supabase
@@ -66,57 +61,79 @@ export const adminMembersService = {
           updated_at: new Date().toISOString(),
         })
         .eq('id', memberId)
-        .select('id, user_status, updated_at')
+        .select()
 
-      if (error) {
-        console.error('Error unverifying member:', error)
-        return { data: null, error }
-      }
-      
-      return { data, error: null }
+      return { data: data?.[0] ?? null, error }
     } catch (err) {
-      console.error('Unexpected error unverifying member:', err)
       return { data: null, error: err }
     }
   },
 
-  // Get verified members only
+  // --------------------------------------
+  // Delete member completely
+  // Deletes from auth.users first, then profiles.
+  // Assumes profile.id == auth.users.id.
+  // --------------------------------------
+  async deleteMember(profileId: string) {
+    try {
+      // 1. Delete from auth.users (using Admin API)
+      const { error: authDeleteError } = await supabase.auth.admin.deleteUser(profileId)
+
+      if (authDeleteError) {
+        console.error('Error deleting auth user:', authDeleteError)
+        return { success: false, error: authDeleteError }
+      }
+
+      // 2. Delete from profiles table
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', profileId)
+
+      if (profileError) {
+        console.error('Error deleting profile:', profileError)
+        // Auth user is already gone, but profile remains – log for manual cleanup
+        return { success: false, error: profileError }
+      }
+
+      return { success: true, error: null }
+    } catch (err) {
+      console.error('Unexpected error deleting member:', err)
+      return { success: false, error: err }
+    }
+  },
+
+  // --------------------------------------
+  // Get verified members
+  // --------------------------------------
   async getVerifiedMembers() {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, first_name, last_name, email, phone, user_status, created_at')
+        .select('*')
         .eq('user_status', 'verified')
         .order('created_at', { ascending: false })
 
-      if (error) {
-        console.error('Error fetching verified members:', error)
-        return { data: [], error }
-      }
-      return { data, error: null }
+      return { data: data ?? [], error }
     } catch (err) {
-      console.error('Unexpected error fetching verified members:', err)
       return { data: [], error: err }
     }
   },
 
-  // Get regular members only (not verified)
+  // --------------------------------------
+  // Get regular (non-verified) members
+  // --------------------------------------
   async getRegularMembers() {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, first_name, last_name, email, phone, user_status, created_at')
+        .select('*')
         .eq('user_status', 'member')
         .order('created_at', { ascending: false })
 
-      if (error) {
-        console.error('Error fetching regular members:', error)
-        return { data: [], error }
-      }
-      return { data, error: null }
+      return { data: data ?? [], error }
     } catch (err) {
-      console.error('Unexpected error fetching regular members:', err)
       return { data: [], error: err }
     }
-  }
+  },
 }
