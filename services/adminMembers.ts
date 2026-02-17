@@ -75,34 +75,37 @@ export const adminMembersService = {
   // Assumes profile.id == auth.users.id.
   // --------------------------------------
   async deleteMember(profileId: string) {
-    try {
-      // 1. Delete from auth.users (using Admin API)
-      const { error: authDeleteError } = await supabase.auth.admin.deleteUser(profileId)
+  try {
+    // Get the current user's session token
+    const { data: sessionData } = await supabase.auth.getSession()
+    const token = sessionData?.session?.access_token
 
-      if (authDeleteError) {
-        console.error('Error deleting auth user:', authDeleteError)
-        return { success: false, error: authDeleteError }
-      }
-
-      // 2. Delete from profiles table
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .delete()
-        .eq('id', profileId)
-
-      if (profileError) {
-        console.error('Error deleting profile:', profileError)
-        // Auth user is already gone, but profile remains – log for manual cleanup
-        return { success: false, error: profileError }
-      }
-
-      return { success: true, error: null }
-    } catch (err) {
-      console.error('Unexpected error deleting member:', err)
-      return { success: false, error: err }
+    if (!token) {
+      throw new Error('No active session')
     }
-  },
 
+    // Call the Edge Function
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/delete-member`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ userId: profileId }),
+    })
+
+    const result = await response.json()
+
+    if (!response.ok) {
+      return { success: false, error: new Error(result.error || 'Delete failed') }
+    }
+
+    return { success: true, error: null }
+  } catch (err) {
+    console.error('Unexpected error deleting member:', err)
+    return { success: false, error: err }
+  }
+},
   // --------------------------------------
   // Get verified members
   // --------------------------------------
@@ -137,3 +140,4 @@ export const adminMembersService = {
     }
   },
 }
+
