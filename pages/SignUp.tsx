@@ -87,7 +87,7 @@ const StatusModal: React.FC<{
                 <p className="font-semibold text-blue-600 text-base mb-3">{email}</p>
                 <div className="text-left bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
                   <p className="text-xs text-gray-700 mb-1">
-                    <span className="font-semibold">📧 Check your inbox or spam folder</span> for an email titled <span className="font-mono bg-blue-100 px-1 py-0.5 rounded">"Supabase Authentication"</span>
+                    <span className="font-semibold">📧 Check your inbox or spam folder</span> for an email titled <span className="font-mono bg-blue-100 px-1 py-0.5 rounded">"Greater Kano Business Council Registeration"</span>
                   </p>
                   <p className="text-xs text-gray-700 mb-1">
                     <span className="font-semibold">🔗 Click the link</span> to verify your email. You'll be redirected to login.
@@ -117,7 +117,7 @@ const StatusModal: React.FC<{
                   isAlreadyRegistered ? 'bg-blue-500' : 'bg-green-500'
                 }`}
                 style={{ 
-                  width: `${100 - (redirectSeconds / (isAlreadyRegistered ? 3 : 10) * 100)}%` 
+                  width: `${100 - (redirectSeconds / (isAlreadyRegistered ? 4 : 10) * 100)}%` 
                 }}
               />
             </div>
